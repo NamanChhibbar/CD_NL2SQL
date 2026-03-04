@@ -1,1 +1,2 @@
-from .data import split_data
+"""Utility functions and classes for the project."""
+
