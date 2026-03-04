@@ -1,0 +1,87 @@
+# Apply to all files without committing:
+#   pre-commit run --all-files
+# Update this file:
+#   pre-commit autoupdate
+minimum_pre_commit_version: 1.15.0
+default_language_version:
+  # Use latest LTS release
+  node: 22.19.0
+repos:
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args:
+          - --maxkb=25000
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-xml
+      - id: check-yaml
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-aws-credentials
+        args: [--allow-missing-credentials]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: forbid-submodules
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: name-tests-test
+        args: [--unittest]
+      - id: no-commit-to-branch
+      - id: requirements-txt-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/sirosen/texthooks
+    rev: 0.7.1
+    hooks:
+      - id: alphabetize-codeowners
+      - id: fix-ligatures
+      - id: fix-smartquotes
+      - id: fix-spaces
+      - id: fix-unicode-dashes
+      - id: forbid-bidi-controls
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff-check
+        args: [--exit-non-zero-on-fix, --exclude=*.ipynb]
+      - id: ruff-format
+        args: [--exit-non-zero-on-fix, --exclude=*.ipynb]
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+        args: [
+            --write,
+            --indent=2,
+            --case-indent, # Switch cases will be indented.
+          ]
+  - repo: https://github.com/rbubley/mirrors-prettier # Use maintained fork of official mirror
+    rev: v3.8.1
+    hooks:
+      - id: prettier
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: [--strict]
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        exclude: ^dev_datasets/.*$
+        additional_dependencies:
+          # `tomllib` was added to stdlib in Python 3.11
+          - tomli==2.2.1 ; python_version < "3.11"
