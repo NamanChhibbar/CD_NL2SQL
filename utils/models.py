@@ -23,5 +23,6 @@ class ChatbotOutput(BaseModel):
 
     prompt: str
     response: str
+    human_sql: str
     metadata: ChatbotMetadata
     query_details: QueryDetails
