@@ -1,21 +1,21 @@
 """Generate outputs using either the Eval or Test datasets and a given model endpoint."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import itertools
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from datasets import Dataset
 from openai import OpenAI
+from tqdm import tqdm
 
 from utils.data import get_data
 from utils.enums import DatasetNames, GemmaModels
 from utils.models import ChatbotMetadata, ChatbotOutput, QueryDetails
 from utils.prompts import SQALE_PROMPT, WIKISQL_PROMPT
-
 
 API_KEY = os.getenv("NL2SQL_API_KEY", "dummy")
 LOGGER = logging.getLogger(__name__)
@@ -32,10 +32,12 @@ def process_item(
         prompt_template = WIKISQL_PROMPT
         table = item["table"]["header"]
         query = item["question"]
+        human_sql = item["sql"]["human_readable"]
     else:
         prompt_template = SQALE_PROMPT
         table = item["schema"]
         query = item["question"]
+        human_sql = item["query"]
 
     prompt = prompt_template.format(table=table, query=query)
 
@@ -47,6 +49,7 @@ def process_item(
     return ChatbotOutput(
         prompt=prompt,
         response=response.output_text,
+        human_sql=human_sql,
         metadata=ChatbotMetadata(model_name=model_name, used_guided_decoding=False),
         query_details=QueryDetails(
             dataset_name=str(dataset_name),
@@ -94,6 +97,12 @@ def main() -> None:
         type=Path,
         help="Directory to save outputs",
     )
+    parser.add_argument(
+        "--num-jobs",
+        type=int,
+        default=12,
+        help="Number of jobs to use for parallel processing",
+    )
     args = parser.parse_args()
     output_dir: Path = args.output_dir
 
@@ -112,7 +121,7 @@ def main() -> None:
 
     print(f"Processing {len(dataset)} items...")
     # Example of using ThreadPoolExecutor to process dataset items in parallel
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=args.num_jobs) as executor:
         futures = [
             executor.submit(
                 process_item,
@@ -124,12 +133,17 @@ def main() -> None:
             for item in dataset
         ]
 
-        for future in futures:
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Generating outputs"):
             results.append(future.result())
 
     print(f"Processed {len(results)} items.")
 
-    with open(output_dir / f"{args.model_name.replace("/", "-")}_{args.dataset_name}_{args.dataset_split}.jsonl", "w", encoding="utf-8") as processed_response_file:
+    with open(
+        output_dir
+        / f"{args.model_name.replace('/', '-')}_{args.dataset_name}_{args.dataset_split}.jsonl",
+        "w",
+        encoding="utf-8",
+    ) as processed_response_file:
         for response in results:
             processed_response_file.write(response.model_dump_json())
             processed_response_file.write("\n")
