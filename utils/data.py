@@ -1,14 +1,15 @@
 """Contains utility functions for data processing."""
 
+from functools import cache
 from typing import Literal
 
-from anyio.functools import lru_cache
 from datasets import Dataset, load_dataset
 
 from utils.enums import DatasetNames
+from utils.paths import WIKISQL_DATA_TEST, WIKISQL_DATA_TRAIN, WIKISQL_DATA_VAL
 
 
-@lru_cache(maxsize=None)
+@cache
 def split_data(
     dataset: Dataset, train_frac=0.8, val_frac=0.1, random_seed=42
 ) -> tuple[Dataset, Dataset, Dataset]:
@@ -50,7 +51,18 @@ def get_data(dataset_name: DatasetNames, split: Literal["train", "validation", "
                     return val
                 case "test":
                     return test
+                case _:
+                    raise ValueError(f"Invalid split for SQaLe: {split}")
         case DatasetNames.WIKISQL:
-            return load_dataset("wikisql")[split]
+            match split:
+                case "train":
+                    dataset_path = WIKISQL_DATA_TRAIN
+                case "validation":
+                    dataset_path = WIKISQL_DATA_VAL
+                case "test":
+                    dataset_path = WIKISQL_DATA_TEST
+                case _:
+                    raise ValueError(f"Invalid split for WIKISQL: {split}")
+            return load_dataset("json", data_files=str(dataset_path), split="train")
         case _:
             raise ValueError(f"Invalid dataset name: {dataset_name}")
