@@ -14,10 +14,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:rtxa6000:1
 #SBATCH --time=24:00:00
-#SBATCH --output=vllm_%j.out
-#SBATCH --error=vllm_%j.err
+#SBATCH --output=slurm/vllm_%j.out
+#SBATCH --error=slurm/vllm_%j.err
 
 VLLM_IMAGE="vllm.sif"
 VLLM_PORT=8800
