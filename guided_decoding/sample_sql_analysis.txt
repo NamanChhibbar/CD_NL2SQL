@@ -1,0 +1,260 @@
+Query 1:
+SQL:
+SELECT user_id, COUNT(*) AS unread_count 
+FROM tr_wp_notifications 
+WHERE read_status = 'unread' 
+GROUP BY user_id 
+ORDER BY unread_count DESC;
+
+Features:
+select 
+aggregation (COUNT) 
+alias
+where (column = value)
+group by 
+order by (DESC)
+--------------------------------------------------
+Query 2:
+SQL:
+SELECT pr.* 
+FROM public_requisitions pr 
+JOIN rental_agreements ra ON pr.id = ra.public_requisition_id 
+WHERE ra.status = 'cancelled'   
+AND EXISTS (     
+    SELECT 1     
+    FROM membership_plans mp     
+    WHERE mp.consumer_id = pr.consumer_id       AND mp.status = 'active'       AND mp.start_date <= ra.end_date       AND mp.end_date >= ra.end_date   
+);
+
+Features:
+select
+table alias
+join
+where (column = value)
+multiple conditions (AND)
+exists
+subquery
+where (column = column)
+--------------------------------------------------
+Query 3:
+SQL:
+SELECT AVG(difficulty_score) 
+FROM rom_difficulty_levels;
+
+Features:
+select
+aggregation (AVG)
+--------------------------------------------------
+Query 4:
+SQL:
+SELECT buku.kategori, AVG(Data_Buku_Profil.rating) AS rata_rata_rating 
+FROM Data_Buku_Profil 
+JOIN buku ON Data_Buku_Profil.id_buku = buku.id_buku 
+GROUP BY buku.kategori;
+
+Feature:
+select
+qualified columns (table.column)
+aggregation (AVG)
+alias
+join
+group by
+--------------------------------------------------
+Query 5:
+SQL:
+SELECT User.id, User.name, User.email 
+FROM User 
+INNER JOIN Booking ON User.id = Booking.userId 
+INNER JOIN Accommodation ON Booking.accoId = Accommodation.id 
+GROUP BY User.id 
+HAVING AVG(Accommodation.rating) > 4.5;
+
+Feature:
+select 
+qualified columns (table.column)
+join (INNER JOIN)
+multiple joins
+group by
+having
+aggregation (AVG)
+--------------------------------------------------
+Query 6:
+SQL:
+SELECT COUNT(*)  
+FROM scheduled_messages  
+JOIN user_preferences ON scheduled_messages.user_id = user_preferences.user_id  
+WHERE user_preferences.notification_sound = 0;
+
+Feature:
+select
+aggregation (COUNT)
+join
+condition (column = column)
+where
+qualified columns (table.column)
+condition (column = value)
+--------------------------------------------------
+Query 7:
+SQL:
+WITH qualified_users AS (     
+    SELECT DISTINCT user_id     
+    FROM user_achievements     
+    WHERE achievement_type = 'advanced cooking' 
+), 
+meal_plan_cuisines AS (     
+    SELECT mpd.meal_plan_id,            
+        COUNT(DISTINCT dc.cuisine_id) AS cuisine_count     
+    FROM meal_plan_dishes mpd     
+    JOIN dish_cuisine dc ON mpd.dish_id = dc.dish_id     
+    JOIN meal_plans m ON mpd.meal_plan_id = m.id     
+    JOIN qualified_users qu ON m.user_id = qu.user_id     
+    GROUP BY mpd.meal_plan_id 
+), 
+max_cuisine_count AS (     
+    SELECT MAX(cuisine_count) AS max_count     
+    FROM meal_plan_cuisines 
+) 
+SELECT m.id AS meal_plan_id, 
+    m.title AS meal_plan_title,     
+    GROUP_CONCAT(DISTINCT dr.restriction_name) AS dietary_restrictions,     
+    GROUP_CONCAT(DISTINCT ump.preference_type || ': ' || ump.value) AS user_preferences 
+FROM meal_plans m 
+JOIN qualified_users qu ON m.user_id = qu.user_id 
+JOIN meal_plan_cuisines mpc ON m.id = mpc.meal_plan_id 
+JOIN max_cuisine_count mcc ON mpc.cuisine_count = mcc.max_count 
+LEFT JOIN meal_plan_dishes mpd2 ON m.id = mpd2.meal_plan_id 
+LEFT JOIN dish_dietary dd ON mpd2.dish_id = dd.dish_id 
+LEFT JOIN dietary_restrictions dr ON dd.dietary_id = dr.id 
+LEFT JOIN user_meal_preferences ump ON m.user_id = ump.user_id 
+GROUP BY m.id, m.title;
+
+Features:
+with / CTE
+multiple CTEs
+select
+distinct
+aggregation (COUNT, MAX, GROUP_CONCAT)
+aggregation with DISTINCT
+join (JOIN, LEFT JOIN)
+table alias
+qualified columns (table.column)
+where
+condition (column = column, column = value)
+group by multiple columns
+alias
+string concatenation (||)
+--------------------------------------------------
+Query 8:
+SQL:
+SELECT AVG(e.execution_count) AS average_execution_count 
+FROM SCHEDULER_CONFIGURATION c 
+JOIN SCHEDULER_EXECUTION e ON c.id = e.scheduler_configuration_id 
+WHERE c.application_name = 'InvoiceProcessor' AND c.configuration_status = 'Active';
+--------------------------------------------------
+Query 9:
+SQL:
+SELECT COUNT(*)  
+FROM (     
+    SELECT answer_id      
+    FROM dbo_TBL_ANSWER_STATISTICS      
+    GROUP BY answer_id     
+    HAVING SUM(total_views) > 150 AND (SUM(upvotes - downvotes) * 1.0 / NULLIF(SUM(total_views), 0)) * 5.0 > 4.0 
+) AS qualified_answers;
+
+Feature:
+subquery in FROM
+complex HAVING condition
+arithmetic expressions (+, -, *, /)
+function (NULLIF)
+function with arguments
+comparison operators (>)
+--------------------------------------------------
+Query 10:
+SQL:
+SELECT products.fullname AS product_name, inventory_adjustments.quantity_change AS adjustment_quantity, companies.name AS company_name 
+FROM inventory_adjustments 
+JOIN products ON inventory_adjustments.productid = products.id 
+JOIN companies ON products.companyid = companies.id 
+WHERE inventory_adjustments.adjustment_date >= DATE('now', '-30 days');
+
+Feature:
+comparison operators (>=)
+data funtion (DATA)
+function with arguments
+--------------------------------------------------
+Query 11:
+SQL:
+SELECT d.bruker_id, COUNT(*) AS total_documents 
+FROM (     
+    SELECT besv.aktor_id AS bruker_id, COUNT(*) AS doc_count     
+    FROM DOKUMENT_BESVARELSE d_b     
+    JOIN BESVARELSE besv ON d_b.besvarelse_id = besv.besvarelse_id     
+    WHERE d_b.tidspunkt BETWEEN '2023-02-01' AND '2024-08-31'     
+    GROUP BY besv.aktor_id     
+    HAVING COUNT(*) > 3 
+) d 
+JOIN RAAD_RATING r ON d.bruker_id = r.bruker_id 
+WHERE r.score = 5 
+GROUP BY d.bruker_id;
+--------------------------------------------------
+Query 12:
+SQL:
+SELECT COUNT(DISTINCT m.sender_id)  
+FROM messages m 
+JOIN message_recipients r ON m.thread_id = (
+    SELECT thread_id 
+    FROM messages 
+    WHERE id = r.message_id
+) 
+WHERE m.sender_id = r.user_id  AND EXISTS (
+    SELECT 1       
+    FROM user_community_administrations uca       
+    WHERE uca.user_id = m.sender_id   
+);
+
+Feature:
+subquery inside JOIN condition
+correlated subquery
+EXISTS with subquery (repeated pattern)
+--------------------------------------------------
+Query 13:
+SQL:
+SELECT AVG(pp.DESCONTO_PERCENTUAL)  
+FROM tabela_de_produtos_promocoes pp 
+JOIN tabela_de_promocoes p ON pp.ID_PROMOCAO = p.ID_PROMOCAO 
+WHERE p.DATA_INICIO <= '2023-06-30' AND p.DATA_FIM >= '2023-06-01';
+--------------------------------------------------
+Query 14:
+SQL:
+SELECT AVG(CAST(bytes_in AS REAL) + CAST(bytes_out AS REAL)) AS average_bandwidth_utilization 
+FROM cloud_traffic_monitoring 
+WHERE network_id IN (SELECT id FROM cloud_network_acl );
+
+Feature:
+function CAST (type conversion)
+--------------------------------------------------
+Query 15:
+SQL:
+WITH moderated_issues AS ( 
+    SELECT target_issue_id 
+    FROM moderation_log     
+    WHERE action_type = 'moderation' 
+), 
+recent_media_issues AS (     
+    SELECT DISTINCT issue_id     
+    FROM media     
+    WHERE uploaded_at >= DATE('now', '-7 days') 
+), 
+matched_issues AS (     
+    SELECT DISTINCT mi.target_issue_id AS issue_id     
+    FROM moderated_issues mi     
+    JOIN recent_media_issues rmi ON mi.target_issue_id = rmi.issue_id 
+) 
+SELECT AVG(tag_count) AS average_tag_count 
+FROM (     
+    SELECT COUNT(*) AS tag_count     
+    FROM issue_tag     
+    WHERE issue_id IN (SELECT issue_id FROM matched_issues)     
+    GROUP BY issue_id 
+);
+--------------------------------------------------

@@ -1,0 +1,75 @@
+query ::= with_clause? select_stmt
+
+with_clause ::= WITH cte_def (',' cte_def)*
+cte_def ::= name AS '(' query ')'
+
+select_stmt ::= SELECT distinct? select_list
+                FROM from_clause
+                where_clause?
+                group_by_clause?
+                having_clause?
+                order_by_clause?
+
+name ::= IDENTIFIER
+alias ::= name
+literal ::= number | string
+
+distinct ::= DISTINCT
+
+table_ref ::= name alias? 
+            | '(' query ')' alias
+
+column_ref ::= name
+             | name '.' name
+
+expr ::= column_ref
+       | literal
+       | func_call
+       | agg_expr
+       | expr op expr
+       | '(' expr ')'
+       | expr '||' expr
+
+agg_arg ::= '*' | distinct? expr
+agg_expr ::= agg_func '(' agg_arg ')'
+agg_func ::= COUNT | AVG | SUM | MAX | MIN | GROUP_CONCAT
+
+func_call ::= name '(' arguments ')'
+arguments ::= expr (',' expr)*
+# CAST is currently treated as a generic function; a dedicated rule can be added later if needed.
+
+op ::= '=' | '!=' | '>' | '<' | '>=' | '<='
+
+condition ::= expr op expr
+            | expr BETWEEN expr AND expr
+            | expr IN '(' query ')'
+            | EXISTS '(' query ')'
+            | condition AND condition
+            | condition OR condition
+            | '(' condition ')'
+
+
+select_list ::= select_item (',' select_item)*
+
+select_item ::= column_ref
+              | column_ref AS alias
+              | name '.*'   # table alias
+              | agg_expr
+              | expr AS alias
+
+
+from_clause ::= table_ref (join_clause)*
+
+join_clause ::= join_type table_ref ON condition
+join_type ::= JOIN | INNER JOIN | LEFT JOIN | RIGHT JOIN
+
+where_clause ::= WHERE condition
+having_clause ::= HAVING condition
+
+group_by_clause ::= GROUP BY expr (',' expr)*
+
+order_by_clause ::= ORDER BY order_item (',' order_item)*
+order_item ::= expr sort_dir?
+sort_dir ::= ASC | DESC
+
+
