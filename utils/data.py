@@ -5,7 +5,7 @@ from typing import Literal
 from anyio.functools import lru_cache
 from datasets import Dataset, load_dataset
 
-from utils.enums import DatasetNames
+from .enums import DatasetNames
 
 
 @lru_cache(maxsize=None)
