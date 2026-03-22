@@ -11,16 +11,24 @@ select_stmt ::= SELECT distinct? select_list
                 order_by_clause?
 
 name ::= IDENTIFIER
+IDENTIFIER ::= /[a-zA-Z_][a-zA-Z0-9_]*/
+number ::= /[0-9]+/
+string ::= /"[^"]*"/
+
 alias ::= name
 literal ::= number | string
 
 distinct ::= DISTINCT
 
-table_ref ::= name alias? 
-            | '(' query ')' alias
+# table_ref ::= name alias? 
+#             | '(' query ')' alias
 
-column_ref ::= name
-             | name '.' name
+# column_ref ::= name
+#              | name '.' name
+
+table_ref ::= __TABLE_REF__
+
+column_ref ::= __COLUMN_REF__
 
 expr ::= column_ref
        | literal
