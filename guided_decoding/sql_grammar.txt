@@ -1,83 +1,54 @@
+root ::= ws query ws ";"? ws
+
 query ::= with_clause? select_stmt
 
-with_clause ::= WITH cte_def (',' cte_def)*
-cte_def ::= name AS '(' query ')'
+with_clause ::= "WITH" ws cte_def (ws "," ws cte_def)* ws
+cte_def ::= name ws "AS" ws "(" ws select_stmt ws ")"
 
-select_stmt ::= SELECT distinct? select_list
-                FROM from_clause
-                where_clause?
-                group_by_clause?
-                having_clause?
-                order_by_clause?
+select_stmt ::= "SELECT" ws distinct? select_list ws "FROM" ws from_clause (ws where_clause)? (ws group_by_clause)? (ws having_clause)? (ws order_by_clause)?
 
-name ::= IDENTIFIER
-IDENTIFIER ::= /[a-zA-Z_][a-zA-Z0-9_]*/
-number ::= /[0-9]+/
-string ::= /"[^"]*"/
+distinct ::= "DISTINCT" ws
+
+select_list ::= select_item (ws "," ws select_item)*
+select_item ::= column_ref (ws "AS" ws alias)?
+              | agg_expr (ws "AS" ws alias)?
+              | literal (ws "AS" ws alias)?
+
+from_clause ::= table_ref (ws join_clause)*
+join_clause ::= join_type ws table_ref ws "ON" ws condition
+join_type ::= "JOIN" | "INNER" ws "JOIN" | "LEFT" ws "JOIN" | "RIGHT" ws "JOIN"
+
+where_clause ::= "WHERE" ws condition
+having_clause ::= "HAVING" ws condition
+
+group_by_clause ::= "GROUP" ws "BY" ws column_ref (ws "," ws column_ref)*
+order_by_clause ::= "ORDER" ws "BY" ws order_item (ws "," ws order_item)*
+order_item ::= column_ref (ws sort_dir)? | agg_expr (ws sort_dir)?
+sort_dir ::= "ASC" | "DESC"
+
+table_ref ::= ( __TABLE_REF__ )
+column_ref ::= ( __COLUMN_REF__ )
+
+condition ::= condition_atom (ws ("AND" | "OR") ws condition_atom)*
+condition_atom ::= expr ws op ws expr
+                 | expr ws "BETWEEN" ws expr ws "AND" ws expr
+                 | expr ws "IN" ws "(" ws list_values ws ")"
+                 | "(" ws condition ws ")"
+
+list_values ::= literal (ws "," ws literal)*
+
+expr ::= column_ref | literal
+
+agg_expr ::= agg_func "(" ws agg_arg ws ")"
+agg_arg ::= "*" ws | distinct? column_ref
+agg_func ::= "COUNT" | "AVG" | "SUM" | "MAX" | "MIN" | "GROUP_CONCAT"
+
+op ::= "=" | "!=" | ">" | "<" | ">=" | "<="
 
 alias ::= name
 literal ::= number | string
+name ::= [a-zA-Z_] [a-zA-Z0-9_]*
+number ::= [0-9]+
+string ::= "\"" [^\"]* "\"" | "'" [^']* "'"
 
-distinct ::= DISTINCT
-
-# table_ref ::= name alias? 
-#             | '(' query ')' alias
-
-# column_ref ::= name
-#              | name '.' name
-
-table_ref ::= __TABLE_REF__
-
-column_ref ::= __COLUMN_REF__
-
-expr ::= column_ref
-       | literal
-       | func_call
-       | agg_expr
-       | expr op expr
-       | '(' expr ')'
-       | expr '||' expr
-
-agg_arg ::= '*' | distinct? expr
-agg_expr ::= agg_func '(' agg_arg ')'
-agg_func ::= COUNT | AVG | SUM | MAX | MIN | GROUP_CONCAT
-
-func_call ::= name '(' arguments ')'
-arguments ::= expr (',' expr)*
-# CAST is currently treated as a generic function; a dedicated rule can be added later if needed.
-
-op ::= '=' | '!=' | '>' | '<' | '>=' | '<='
-
-condition ::= expr op expr
-            | expr BETWEEN expr AND expr
-            | expr IN '(' query ')'
-            | EXISTS '(' query ')'
-            | condition AND condition
-            | condition OR condition
-            | '(' condition ')'
-
-
-select_list ::= select_item (',' select_item)*
-
-select_item ::= column_ref
-              | column_ref AS alias
-              | name '.*'   # table alias
-              | agg_expr
-              | expr AS alias
-
-
-from_clause ::= table_ref (join_clause)*
-
-join_clause ::= join_type table_ref ON condition
-join_type ::= JOIN | INNER JOIN | LEFT JOIN | RIGHT JOIN
-
-where_clause ::= WHERE condition
-having_clause ::= HAVING condition
-
-group_by_clause ::= GROUP BY expr (',' expr)*
-
-order_by_clause ::= ORDER BY order_item (',' order_item)*
-order_item ::= expr sort_dir?
-sort_dir ::= ASC | DESC
-
-
+ws ::= [ \t\n]*
