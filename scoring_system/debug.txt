@@ -1,74 +1,6 @@
 
-Error Breakdown:
-agg_only: 0.304
-col_only: 0.068
-both: 0.116
-select: 0.487
-distinct: 0.003
-where: 0.256
-group_by: 0.001
-order_by: 0.001
-limit: 0.000
-
- ../data/google-gemma-3-1b-it_wikisql_validation.jsonl
-agg         : 0.513
-select      : 0.513
-distinct    : 0.994
-where_col   : 0.490
-where_op    : 0.678
-where_val   : 0.628
-group_by    : 0.987
-order_by    : 0.962
-limit       : 0.969
-logical_form: 0.251
-
-Error Breakdown:
-agg_only: 0.610
-col_only: 0.007
-both: 0.318
-select: 0.934
-distinct: 0.017
-where: 0.042
-group_by: 0.000
-order_by: 0.000
-limit: 0.000
-
- ../data/google-gemma-3-270m-it_wikisql_validation.jsonl
-agg         : 0.066
-select      : 0.066
-distinct    : 0.941
-where_col   : 0.126
-where_op    : 0.268
-where_val   : 0.201
-group_by    : 0.958
-order_by    : 0.972
-limit       : 0.990
-logical_form: 0.006
-
-Error Breakdown:
-agg_only: 0.291
-col_only: 0.098
-both: 0.089
-select: 0.479
-distinct: 0.019
-where: 0.150
-group_by: 0.000
-order_by: 0.002
-limit: 0.001
-
- ../data/google-gemma-3-4b-it_wikisql_validation.jsonl
-agg         : 0.521
-select      : 0.521
-distinct    : 0.973
-where_col   : 0.679
-where_op    : 0.816
-where_val   : 0.783
-group_by    : 0.989
-order_by    : 0.943
-limit       : 0.942
-logical_form: 0.349
-
-Error Breakdown:
+data/google-gemma-3-12b-it_wikisql_validation.jsonl
+Error Breakdown (fraction of all examples):
 agg_only: 0.235
 col_only: 0.103
 both: 0.045
@@ -78,8 +10,6 @@ where: 0.117
 group_by: 0.000
 order_by: 0.001
 limit: 0.000
-
- ../data/google-gemma-3-12b-it_wikisql_validation.jsonl
 agg         : 0.618
 select      : 0.618
 distinct    : 0.961
@@ -91,7 +21,52 @@ order_by    : 0.975
 limit       : 0.973
 logical_form: 0.467
 
-Error Breakdown:
+data/google-gemma-3-1b-it_wikisql_validation.jsonl
+Error Breakdown (fraction of all examples):
+agg_only: 0.304
+col_only: 0.068
+both: 0.116
+select: 0.487
+distinct: 0.003
+where: 0.256
+group_by: 0.001
+order_by: 0.001
+limit: 0.000
+agg         : 0.513
+select      : 0.513
+distinct    : 0.994
+where_col   : 0.490
+where_op    : 0.678
+where_val   : 0.628
+group_by    : 0.987
+order_by    : 0.962
+limit       : 0.969
+logical_form: 0.252
+
+data/google-gemma-3-270m-it_wikisql_validation.jsonl
+Error Breakdown (fraction of all examples):
+agg_only: 0.610
+col_only: 0.007
+both: 0.318
+select: 0.934
+distinct: 0.017
+where: 0.042
+group_by: 0.000
+order_by: 0.000
+limit: 0.000
+agg         : 0.066
+select      : 0.066
+distinct    : 0.941
+where_col   : 0.126
+where_op    : 0.268
+where_val   : 0.200
+group_by    : 0.958
+order_by    : 0.972
+limit       : 0.990
+logical_form: 0.006
+
+data/google-gemma-3-27b-it_wikisql_validation.jsonl
+Error Breakdown (fraction of all examples):
 agg_only: 0.099
 col_only: 0.133
 both: 0.027
@@ -101,8 +76,6 @@ where: 0.132
 group_by: 0.000
 order_by: 0.002
 limit: 0.001
-
- ../data/google-gemma-3-27b-it_wikisql_validation.jsonl
 agg         : 0.742
 select      : 0.742
 distinct    : 0.989
@@ -113,3 +86,25 @@ group_by    : 0.999
 order_by    : 0.957
 limit       : 0.955
 logical_form: 0.598
+
+data/google-gemma-3-4b-it_wikisql_validation.jsonl
+Error Breakdown (fraction of all examples):
+agg_only: 0.291
+col_only: 0.098
+both: 0.089
+select: 0.479
+distinct: 0.019
+where: 0.150
+group_by: 0.000
+order_by: 0.002
+limit: 0.001
+agg         : 0.521
+select      : 0.521
+distinct    : 0.973
+where_col   : 0.679
+where_op    : 0.816
+where_val   : 0.783
+group_by    : 0.989
+order_by    : 0.943
+limit       : 0.942
+logical_form: 0.349
