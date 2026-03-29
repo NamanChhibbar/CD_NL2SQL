@@ -6,10 +6,11 @@ import itertools
 import logging
 import os
 from pathlib import Path
+import time
 from typing import Any
 
 from datasets import Dataset
-from openai import OpenAI
+from openai import APIError, APITimeoutError, OpenAI
 from tqdm import tqdm
 
 from utils.data import get_data
@@ -33,7 +34,8 @@ def process_item(
     *,
     base_grammar: str | None = None,
     max_completion_tokens: int = 256,
-) -> ChatbotOutput:
+    max_retries: int = 3,
+) -> ChatbotOutput | None:
     """Process a single dataset item and return the chatbot output.
 
     When *base_grammar* is provided the request goes through the
@@ -54,37 +56,47 @@ def process_item(
 
     prompt = prompt_template.format(table=table, query=query)
 
-    response = client.responses.create(
-        model=model_name,
-        input=prompt,
-        extra_body={
-            "structured_outputs": {
-                "grammar": build_dynamic_grammar(
-                    base_grammar, *extract_schema_info(item, dataset_name)
-                )
-            },
-        }
-        if base_grammar is not None
-        else {},
-        temperature=0.0 if base_grammar is not None else None,
-        max_output_tokens=max_completion_tokens if base_grammar is not None else None,
-    )
-    response_text = response.output_text
+    for attempt in range(max_retries):
+        try:
+            response = client.responses.create(
+                    model=model_name,
+                    input=prompt,
+                extra_body={
+                "structured_outputs": {
+                    "grammar": build_dynamic_grammar(
+                        base_grammar, *extract_schema_info(item, dataset_name)
+                    )
+                },
+            }
+            if base_grammar is not None
+            else {},
+            temperature=0.0 if base_grammar is not None else None,
+            max_output_tokens=max_completion_tokens if base_grammar is not None else None,
+            )
+            response_text = response.output_text
 
-    return ChatbotOutput(
-        prompt=prompt,
-        response=response_text,
-        human_sql=human_sql,
-        metadata=ChatbotMetadata(
+            return ChatbotOutput(
+                prompt=prompt,
+                response=response_text,
+                human_sql=human_sql,
+                metadata=ChatbotMetadata(
             model_name=model_name,
             used_guided_decoding=base_grammar is not None,
         ),
-        query_details=QueryDetails(
-            dataset_name=str(dataset_name),
-            raw_question=query,
-            schema_or_table_details=str(table),
-        ),
-    )
+                query_details=QueryDetails(
+                    dataset_name=str(dataset_name),
+                    raw_question=query,
+                    schema_or_table_details=str(table),
+                ),
+            )
+        except (APIError, APITimeoutError) as e:
+            LOGGER.error(f"Error processing item (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2**attempt)  # Exponential backoff
+            else:
+                LOGGER.error("Max retries reached. Skipping item.")
+                return None
+    return None
 
 
 def main() -> None:
@@ -149,6 +161,12 @@ def main() -> None:
         default=512,
         help="Maximum tokens in the model completion (used with --guided-decoding)",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds for API requests",
+    )
     args = parser.parse_args()
     output_dir: Path = args.output_dir
 
@@ -166,14 +184,21 @@ def main() -> None:
         print(f"Guided decoding enabled (grammar: {args.grammar_path})")
 
     clients = [
-        OpenAI(base_url=endpoint, api_key=API_KEY, timeout=600) for endpoint in args.endpoints
+        OpenAI(base_url=endpoint, api_key=API_KEY, timeout=args.timeout) for endpoint in args.endpoints
     ]
     client_cycle = itertools.cycle(clients)
 
-    results: list[ChatbotOutput] = []
+    suffix = "_guided" if args.guided_decoding else ""
+    output_file_path = (
+        f"{args.model_name.replace('/', '-')}_{args.dataset_name}"
+        f"_{args.dataset_split}{suffix}.jsonl"
+    )
 
     print(f"Processing {len(dataset)} items...")
-    with ThreadPoolExecutor(max_workers=args.num_jobs) as executor:
+    with (
+        open(output_file_path, "w", encoding="utf-8") as f,
+        ThreadPoolExecutor(max_workers=args.num_jobs) as executor,
+    ):
         futures = [
             executor.submit(
                 process_item,
@@ -187,24 +212,15 @@ def main() -> None:
             for item in dataset
         ]
 
+        processed_count = 0
         for future in tqdm(as_completed(futures), total=len(futures), desc="Generating outputs"):
-            results.append(future.result())
+            result = future.result()
+            if result:
+                f.write(result.model_dump_json() + "\n")
+                f.flush()
+                processed_count += 1
 
-    print(f"Processed {len(results)} items.")
-
-    suffix = "_guided" if args.guided_decoding else ""
-    filename = (
-        f"{args.model_name.replace('/', '-')}_{args.dataset_name}"
-        f"_{args.dataset_split}{suffix}.jsonl"
-    )
-    with open(
-        output_dir / filename,
-        "w",
-        encoding="utf-8",
-    ) as processed_response_file:
-        for response in results:
-            processed_response_file.write(response.model_dump_json())
-            processed_response_file.write("\n")
+    print(f"Processed {processed_count} items. Results saved to {output_file_path}")
 
 
 if __name__ == "__main__":
