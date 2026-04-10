@@ -121,24 +121,41 @@ docker run --runtime nvidia --gpus all \
 
 ## Generating Outputs
 
-All scripts are run as modules from the project root (with the venv active).
+> **Prerequisites:** activate the venv (`source .venv/bin/activate`) and make sure a vLLM server is running. All scripts must be run as **modules** from the **project root** (`python -m scripts.<name>`).
 
-### Without Guided Decoding
+### Basic Command
 
 ```bash
 python -m scripts.generate_outputs \
-    --dataset-name wikisql \
-    --dataset-split validation \
-    --endpoint http://127.0.0.1:8000/v1 \
-    --output-dir outputs/
+    --model-name <MODEL> \
+    --dataset-name <DATASET> \
+    --dataset-split <SPLIT> \
+    --endpoint <VLLM_URL> \
+    --output-dir <DIR> \
+    [--guided-decoding]
 ```
 
-### With Guided Decoding
+### Full Flag Reference
 
-Add `--guided-decoding` to constrain model output to valid SQL via an EBNF grammar:
+| Flag | Required | Default | Choices / Description |
+| --- | --- | --- | --- |
+| `--model-name` | No | `google/gemma-3-270m-it` | `google/gemma-3-270m-it`, `google/gemma-3-1b-it`, `google/gemma-3-4b-it`, `google/gemma-3-12b-it`, `google/gemma-3-27b-it` -- must match the model served by vLLM |
+| `--dataset-name` | No | `wikisql` | `wikisql` or `SQaLe` |
+| `--dataset-split` | No | `validation` | `train`, `validation`, or `test` |
+| `--endpoint` | **Yes** | -- | vLLM base URL (can be passed multiple times for load balancing) |
+| `--output-dir` | **Yes** | -- | Directory to write results |
+| `--guided-decoding` | No | off | Enable EBNF grammar-constrained decoding |
+| `--grammar-path` | No | `guided_decoding/sql_grammar.txt` | Custom grammar template (only used with `--guided-decoding`) |
+| `--max-completion-tokens` | No | `256` | Max tokens per response (only used with `--guided-decoding`) |
+| `--num-jobs` | No | `12` | Number of parallel workers |
+
+### Examples
+
+Generate outputs on WikiSQL validation with guided decoding using the 12B model:
 
 ```bash
 python -m scripts.generate_outputs \
+    --model-name google/gemma-3-12b-it \
     --dataset-name wikisql \
     --dataset-split validation \
     --endpoint http://127.0.0.1:8000/v1 \
@@ -146,20 +163,37 @@ python -m scripts.generate_outputs \
     --guided-decoding
 ```
 
-This works for both `wikisql` and `SQaLe` datasets. Key optional flags:
+Generate outputs on SQaLe test without guided decoding using the default model:
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--guided-decoding` | off | Enable grammar-constrained decoding |
-| `--grammar-path` | `guided_decoding/sql_grammar.txt` | Custom EBNF grammar template |
-| `--max-completion-tokens` | 256 | Max tokens per completion |
-| `--num-jobs` | 12 | Parallel workers |
+```bash
+python -m scripts.generate_outputs \
+    --dataset-name SQaLe \
+    --dataset-split test \
+    --endpoint http://127.0.0.1:8000/v1 \
+    --output-dir outputs/
+```
 
-Output is saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided].jsonl`.
+### Output Format
+
+Results are saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided].jsonl`. Each line contains:
+
+```json
+{
+  "prompt": "...",
+  "response": "...",
+  "human_sql": "...",
+  "metadata": { "model_name": "...", "used_guided_decoding": true },
+  "query_details": {
+    "dataset_name": "...",
+    "raw_question": "...",
+    "schema_or_table_details": "..."
+  }
+}
+```
 
 ### Smoke Test (Hardcoded Examples)
 
-To quickly verify guided decoding against a few samples without loading a full dataset:
+To quickly verify guided decoding against a few built-in samples without loading a full dataset:
 
 ```bash
 python -m scripts.test_guided_decoding --base-url http://127.0.0.1:8000/v1
