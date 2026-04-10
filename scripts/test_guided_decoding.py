@@ -8,6 +8,8 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from utils.grammar import build_dynamic_grammar, read_grammar_template
+
 DEFAULT_MODEL = "google/gemma-3-12b-it"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
@@ -76,28 +78,6 @@ SAMPLES: list[Sample] = [
 ]
 
 
-def escape_grammar_atom(text: str) -> str:
-    """Escape one literal so it can be embedded in the grammar."""
-    escaped_text = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"\\"{escaped_text}\\""'
-
-
-def build_dynamic_grammar(base_grammar: str, columns: list[str]) -> str:
-    """Inject the table and column names into the base grammar template."""
-    column_rule = " | ".join(escape_grammar_atom(c) for c in columns)
-
-    grammar = base_grammar.replace("__TABLE_REF__", escape_grammar_atom("table"))
-    grammar = grammar.replace("__COLUMN_REF__", column_rule)
-    return grammar
-
-
-def read_text(path: Path) -> str:
-    """Read the grammar file from disk."""
-    if not path.exists():
-        raise FileNotFoundError(f"Grammar file not found: {path}")
-    return path.read_text(encoding="utf-8")
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Create the command-line interface for the test script."""
     parser = argparse.ArgumentParser(description="Test vLLM guided decoding with a SQL grammar.")
@@ -130,7 +110,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    base_grammar = read_text(Path(args.grammar_path))
+    base_grammar = read_grammar_template(Path(args.grammar_path))
     client = OpenAI(base_url=args.base_url, api_key=args.api_key)
 
     for i, sample in enumerate(SAMPLES, start=1):
@@ -141,7 +121,7 @@ def main() -> None:
         print("Schema:", sample.schema)
         print("-" * 100)
 
-        grammar = build_dynamic_grammar(base_grammar, sample.schema)
+        grammar = build_dynamic_grammar(base_grammar, ["table"], sample.schema)
 
         prompt = build_prompt(sample.schema, sample.question)
 

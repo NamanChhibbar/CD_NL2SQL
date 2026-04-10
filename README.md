@@ -118,3 +118,49 @@ docker run --runtime nvidia --gpus all \
 - `-p 8000:8000`: Maps the container's port 8000 to the host.
 - `-v ~/.cache/huggingface:/root/.cache/huggingface`: Mounts your local Hugging Face cache to avoid re-downloading models.
 - `--tensor-parallel-size`: If you have multiple GPUs, you can specify the number of GPUs to use (e.g., `--tensor-parallel-size 2`).
+
+## Generating Outputs
+
+All scripts are run as modules from the project root (with the venv active).
+
+### Without Guided Decoding
+
+```bash
+python -m scripts.generate_outputs \
+    --dataset-name wikisql \
+    --dataset-split validation \
+    --endpoint http://127.0.0.1:8000/v1 \
+    --output-dir outputs/
+```
+
+### With Guided Decoding
+
+Add `--guided-decoding` to constrain model output to valid SQL via an EBNF grammar:
+
+```bash
+python -m scripts.generate_outputs \
+    --dataset-name wikisql \
+    --dataset-split validation \
+    --endpoint http://127.0.0.1:8000/v1 \
+    --output-dir outputs/ \
+    --guided-decoding
+```
+
+This works for both `wikisql` and `SQaLe` datasets. Key optional flags:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--guided-decoding` | off | Enable grammar-constrained decoding |
+| `--grammar-path` | `guided_decoding/sql_grammar.txt` | Custom EBNF grammar template |
+| `--max-completion-tokens` | 256 | Max tokens per completion |
+| `--num-jobs` | 12 | Parallel workers |
+
+Output is saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided].jsonl`.
+
+### Smoke Test (Hardcoded Examples)
+
+To quickly verify guided decoding against a few samples without loading a full dataset:
+
+```bash
+python -m scripts.test_guided_decoding --base-url http://127.0.0.1:8000/v1
+```
