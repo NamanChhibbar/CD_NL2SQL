@@ -165,7 +165,9 @@ def main() -> None:
         base_grammar = read_grammar_template(Path(args.grammar_path))
         print(f"Guided decoding enabled (grammar: {args.grammar_path})")
 
-    clients = [OpenAI(base_url=endpoint, api_key=API_KEY) for endpoint in args.endpoints]
+    clients = [
+        OpenAI(base_url=endpoint, api_key=API_KEY, timeout=600) for endpoint in args.endpoints
+    ]
     client_cycle = itertools.cycle(clients)
 
     results: list[ChatbotOutput] = []
