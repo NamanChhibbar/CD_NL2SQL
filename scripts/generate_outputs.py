@@ -54,28 +54,22 @@ def process_item(
 
     prompt = prompt_template.format(table=table, query=query)
 
-    if base_grammar is not None:
-        tables, columns = extract_schema_info(item, dataset_name)
-        grammar = build_dynamic_grammar(base_grammar, tables, columns)
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.0,
-            max_completion_tokens=max_completion_tokens,
-            extra_body={
-                "structured_outputs": {"grammar": grammar},
+    response = client.responses.create(
+        model=model_name,
+        input=prompt,
+        extra_body={
+            "structured_outputs": {
+                "grammar": build_dynamic_grammar(
+                    base_grammar, *extract_schema_info(item, dataset_name)
+                )
             },
-        )
-        response_text = response.choices[0].message.content or ""
-    else:
-        response = client.responses.create(
-            model=model_name,
-            input=prompt,
-        )
-        response_text = response.output_text
+        }
+        if base_grammar is not None
+        else {},
+        temperature=0.0 if base_grammar is not None else None,
+        max_output_tokens=max_completion_tokens if base_grammar is not None else None,
+    )
+    response_text = response.output_text
 
     return ChatbotOutput(
         prompt=prompt,
@@ -152,7 +146,7 @@ def main() -> None:
     parser.add_argument(
         "--max-completion-tokens",
         type=int,
-        default=256,
+        default=512,
         help="Maximum tokens in the model completion (used with --guided-decoding)",
     )
     args = parser.parse_args()
