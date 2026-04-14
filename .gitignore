@@ -9,6 +9,9 @@ temp*
 # MacOS specific files
 .DS_Store
 
+# VS Code specific files
+.vscode/
+
 # Pickle files
 *.pkl
 *.pickle
