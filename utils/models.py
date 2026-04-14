@@ -1,5 +1,7 @@
 """Pydantic Models for storing output results."""
 
+from pathlib import Path
+
 from pydantic import BaseModel
 
 
@@ -16,6 +18,7 @@ class ChatbotMetadata(BaseModel):
     response_status: str | None = None
     incomplete_reason: str | None = None
     output_tokens: int | None = None
+    guided_decoding_grammar_path: Path | str | None = None
 
 
 class QueryDetails(BaseModel):

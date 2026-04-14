@@ -252,6 +252,7 @@ def process_item(
                     generation_approach=generation_approach,
                     agent_critic_rounds=rounds_used if use_agent_critic else None,
                     final_validation_error=validation_error,
+                    guided_decoding_grammar_path=base_grammar,
                 ),
                 query_details=QueryDetails(
                     dataset_name=str(dataset_name),
