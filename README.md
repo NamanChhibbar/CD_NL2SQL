@@ -119,6 +119,33 @@ docker run --runtime nvidia --gpus all \
 - `-v ~/.cache/huggingface:/root/.cache/huggingface`: Mounts your local Hugging Face cache to avoid re-downloading models.
 - `--tensor-parallel-size`: If you have multiple GPUs, you can specify the number of GPUs to use (e.g., `--tensor-parallel-size 2`).
 
+## Running the Analysis Script
+
+The SQL analysis scripts live under `scoring_system/`. The entry point is `scoring_system/main.py`, which evaluates every `*.jsonl` file under `scoring_system/data/`.
+
+### How to Run
+
+Run the analysis script from inside the `scoring_system/` directory.
+
+```bash
+cd scoring_system
+python main.py
+```
+
+If you are using `uv`, you can also run:
+
+```bash
+cd scoring_system
+uv run python main.py
+```
+
+### What the Script Prints
+
+For each JSONL file in `scoring_system/data/`, the script prints:
+
+- an error breakdown reported as fractions of all examples;
+- component-wise scores for `agg`, `select`, `distinct`, `where_col`, `where_op`, `where_val`, `group_by`, `order_by`, and `limit`
+- a `logical_form` score, which is the strict all-or-nothing match rate
 ## Generating Outputs
 
 > **Prerequisites:** activate the venv (`source .venv/bin/activate`) and make sure a vLLM server is running. All scripts must be run as **modules** from the **project root** (`python -m scripts.<name>`).
