@@ -2,7 +2,7 @@
 
 ## Project Setup
 
-This project uses Python 3.14 or later.
+This project currently supports Python 3.13.x.
 
 ### Using `uv` (Recommended)
 
@@ -19,9 +19,9 @@ If you have [`uv`](https://docs.astral.sh/uv/) installed:
 
 ### Using `conda`
 
-1. Create a new conda environment with Python 3.14:
+1. Create a new conda environment with Python 3.13:
    ```bash
-   conda create -n cd_nl2sql python=3.14
+   conda create -n cd_nl2sql python=3.13
    ```
 2. Activate the environment:
    ```bash

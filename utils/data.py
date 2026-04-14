@@ -6,7 +6,6 @@ from typing import Literal
 from datasets import Dataset, load_dataset
 
 from utils.enums import DatasetNames
-from utils.paths import WIKISQL_DATA_TEST, WIKISQL_DATA_TRAIN, WIKISQL_DATA_VAL
 
 
 @cache

@@ -1,5 +1,5 @@
 [project]
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 version = "0.0.1"
 name = "CD_NL2SQL"
 dependencies = [
