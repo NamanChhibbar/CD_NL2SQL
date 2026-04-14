@@ -1,3 +1,5 @@
+"""Exercise vLLM guided decoding against a small set of SQL-generation prompts."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,16 +8,18 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from utils.grammar import build_dynamic_grammar, read_grammar_template
 
 DEFAULT_MODEL = "google/gemma-3-12b-it"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
-DEFAULT_BACKEND = "xgrammar"
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries."
 
 
 @dataclass
 class Sample:
+    """Store one schema, question, and expected SQL example."""
+
     name: str
     schema: list[str]
     question: str
@@ -73,34 +77,23 @@ SAMPLES: list[Sample] = [
     ),
 ]
 
-def escape_grammar_atom(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def build_dynamic_grammar(base_grammar: str, columns: list[str]) -> str:
-    column_rule = " | ".join(escape_grammar_atom(c) for c in columns)
-
-    grammar = base_grammar.replace("__TABLE_REF__", escape_grammar_atom("table"))
-    grammar = grammar.replace("__COLUMN_REF__", column_rule)
-    return grammar
-
-def read_text(path: Path) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"Grammar file not found: {path}")
-    return path.read_text(encoding="utf-8")
-
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line interface for the test script."""
     parser = argparse.ArgumentParser(description="Test vLLM guided decoding with a SQL grammar.")
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="vLLM OpenAI-compatible base URL")
+    parser.add_argument(
+        "--base-url", default=DEFAULT_BASE_URL, help="vLLM OpenAI-compatible base URL"
+    )
     parser.add_argument("--api-key", default="dummy", help="API key value for the OpenAI client")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Model name served by vLLM")
-    parser.add_argument("--grammar-path", default=DEFAULT_GRAMMAR_PATH, help="Path to the grammar file")
-    parser.add_argument("--backend", default=DEFAULT_BACKEND, help="Guided decoding backend")
+    parser.add_argument(
+        "--grammar-path", default=DEFAULT_GRAMMAR_PATH, help="Path to the grammar file"
+    )
     return parser
 
 
 def build_prompt(schema: list[str], question: str) -> str:
+    """Format the user prompt sent to the model for one example."""
     schema_text = ", ".join(f"'{col}'" for col in schema)
     return (
         "Help the user write an SQL statement for their question.\n"
@@ -113,10 +106,11 @@ def build_prompt(schema: list[str], question: str) -> str:
 
 
 def main() -> None:
+    """Run all guided decoding examples and print each model response."""
     parser = build_parser()
     args = parser.parse_args()
 
-    base_grammar = read_text(Path(args.grammar_path))
+    base_grammar = read_grammar_template(Path(args.grammar_path))
     client = OpenAI(base_url=args.base_url, api_key=args.api_key)
 
     for i, sample in enumerate(SAMPLES, start=1):
@@ -127,7 +121,7 @@ def main() -> None:
         print("Schema:", sample.schema)
         print("-" * 100)
 
-        grammar = build_dynamic_grammar(base_grammar, sample.schema)
+        grammar = build_dynamic_grammar(base_grammar, ["table"], sample.schema)
 
         prompt = build_prompt(sample.schema, sample.question)
 
@@ -138,9 +132,9 @@ def main() -> None:
                 {"role": "user", "content": prompt},
             ],
             temperature=0.0,
+            max_completion_tokens=128,
             extra_body={
-                "guided_grammar": grammar,
-                "guided_decoding_backend": args.backend,
+                "structured_outputs": {"grammar": grammar},
             },
         )
 
