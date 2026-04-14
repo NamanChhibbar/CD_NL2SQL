@@ -146,3 +146,82 @@ For each JSONL file in `scoring_system/data/`, the script prints:
 - an error breakdown reported as fractions of all examples;
 - component-wise scores for `agg`, `select`, `distinct`, `where_col`, `where_op`, `where_val`, `group_by`, `order_by`, and `limit`
 - a `logical_form` score, which is the strict all-or-nothing match rate
+## Generating Outputs
+
+> **Prerequisites:** activate the venv (`source .venv/bin/activate`) and make sure a vLLM server is running. All scripts must be run as **modules** from the **project root** (`python -m scripts.<name>`).
+
+### Basic Command
+
+```bash
+python -m scripts.generate_outputs \
+    --model-name <MODEL> \
+    --dataset-name <DATASET> \
+    --dataset-split <SPLIT> \
+    --endpoint <VLLM_URL> \
+    --output-dir <DIR> \
+    [--guided-decoding]
+```
+
+### Full Flag Reference
+
+| Flag | Required | Default | Choices / Description |
+| --- | --- | --- | --- |
+| `--model-name` | No | `google/gemma-3-270m-it` | `google/gemma-3-270m-it`, `google/gemma-3-1b-it`, `google/gemma-3-4b-it`, `google/gemma-3-12b-it`, `google/gemma-3-27b-it` -- must match the model served by vLLM |
+| `--dataset-name` | No | `wikisql` | `wikisql` or `SQaLe` |
+| `--dataset-split` | No | `validation` | `train`, `validation`, or `test` |
+| `--endpoint` | **Yes** | -- | vLLM base URL (can be passed multiple times for load balancing) |
+| `--output-dir` | **Yes** | -- | Directory to write results |
+| `--guided-decoding` | No | off | Enable EBNF grammar-constrained decoding |
+| `--grammar-path` | No | `guided_decoding/sql_grammar.txt` | Custom grammar template (only used with `--guided-decoding`) |
+| `--max-completion-tokens` | No | `256` | Max tokens per response (only used with `--guided-decoding`) |
+| `--num-jobs` | No | `12` | Number of parallel workers |
+
+### Examples
+
+Generate outputs on WikiSQL validation with guided decoding using the 12B model:
+
+```bash
+python -m scripts.generate_outputs \
+    --model-name google/gemma-3-12b-it \
+    --dataset-name wikisql \
+    --dataset-split validation \
+    --endpoint http://127.0.0.1:8000/v1 \
+    --output-dir outputs/ \
+    --guided-decoding
+```
+
+Generate outputs on SQaLe test without guided decoding using the default model:
+
+```bash
+python -m scripts.generate_outputs \
+    --dataset-name SQaLe \
+    --dataset-split test \
+    --endpoint http://127.0.0.1:8000/v1 \
+    --output-dir outputs/
+```
+
+### Output Format
+
+Results are saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided].jsonl`. Each line contains:
+
+```json
+{
+  "prompt": "...",
+  "response": "...",
+  "human_sql": "...",
+  "metadata": { "model_name": "...", "used_guided_decoding": true },
+  "query_details": {
+    "dataset_name": "...",
+    "raw_question": "...",
+    "schema_or_table_details": "..."
+  }
+}
+```
+
+### Smoke Test (Hardcoded Examples)
+
+To quickly verify guided decoding against a few built-in samples without loading a full dataset:
+
+```bash
+python -m scripts.test_guided_decoding --base-url http://127.0.0.1:8000/v1
+```

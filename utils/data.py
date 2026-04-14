@@ -38,7 +38,7 @@ def get_data(dataset_name: DatasetNames, split: Literal["train", "validation", "
     match dataset_name:
         case DatasetNames.SQALE:
             train, val, test = split_data(
-                load_dataset("trl-lab/SQaLe-text-to-SQL-dataset", trust_remote_code=True)["train"],
+                load_dataset("trl-lab/SQaLe-text-to-SQL-dataset")["train"],
                 0.8,
                 0.1,
                 random_seed=42,
@@ -51,6 +51,6 @@ def get_data(dataset_name: DatasetNames, split: Literal["train", "validation", "
                 case "test":
                     return test
         case DatasetNames.WIKISQL:
-            return load_dataset("wikisql")[split]
+            return load_dataset("wikisql", revision="refs/convert/parquet")[split]
         case _:
             raise ValueError(f"Invalid dataset name: {dataset_name}")

@@ -14,11 +14,15 @@ from tqdm import tqdm
 
 from utils.data import get_data
 from utils.enums import DatasetNames, GemmaModels
+from utils.grammar import build_dynamic_grammar, extract_schema_info, read_grammar_template
 from utils.models import ChatbotMetadata, ChatbotOutput, QueryDetails
 from utils.prompts import SQALE_PROMPT, WIKISQL_PROMPT
 
 API_KEY = os.getenv("NL2SQL_API_KEY", "dummy")
 LOGGER = logging.getLogger(__name__)
+
+DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
+SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries."
 
 
 def process_item(
@@ -26,8 +30,17 @@ def process_item(
     client: OpenAI,
     model_name: str,
     dataset_name: DatasetNames,
+    *,
+    base_grammar: str | None = None,
+    max_completion_tokens: int = 256,
 ) -> ChatbotOutput:
-    """Process a single dataset item and return the chatbot output."""
+    """Process a single dataset item and return the chatbot output.
+
+    When *base_grammar* is provided the request goes through the
+    ``chat.completions`` endpoint with a per-item EBNF grammar constraint
+    (guided decoding).  Otherwise the ``responses`` endpoint is used without
+    any grammar constraint.
+    """
     if dataset_name == DatasetNames.WIKISQL:
         prompt_template = WIKISQL_PROMPT
         table = item["table"]["header"]
@@ -44,13 +57,28 @@ def process_item(
     response = client.responses.create(
         model=model_name,
         input=prompt,
+        extra_body={
+            "structured_outputs": {
+                "grammar": build_dynamic_grammar(
+                    base_grammar, *extract_schema_info(item, dataset_name)
+                )
+            },
+        }
+        if base_grammar is not None
+        else {},
+        temperature=0.0 if base_grammar is not None else None,
+        max_output_tokens=max_completion_tokens if base_grammar is not None else None,
     )
+    response_text = response.output_text
 
     return ChatbotOutput(
         prompt=prompt,
-        response=response.output_text,
+        response=response_text,
         human_sql=human_sql,
-        metadata=ChatbotMetadata(model_name=model_name, used_guided_decoding=False),
+        metadata=ChatbotMetadata(
+            model_name=model_name,
+            used_guided_decoding=base_grammar is not None,
+        ),
         query_details=QueryDetails(
             dataset_name=str(dataset_name),
             raw_question=query,
@@ -103,6 +131,24 @@ def main() -> None:
         default=12,
         help="Number of jobs to use for parallel processing",
     )
+    parser.add_argument(
+        "--guided-decoding",
+        action="store_true",
+        default=False,
+        help="Enable guided decoding with an EBNF grammar constraint",
+    )
+    parser.add_argument(
+        "--grammar-path",
+        type=Path,
+        default=DEFAULT_GRAMMAR_PATH,
+        help="Path to the EBNF grammar template (used with --guided-decoding)",
+    )
+    parser.add_argument(
+        "--max-completion-tokens",
+        type=int,
+        default=512,
+        help="Maximum tokens in the model completion (used with --guided-decoding)",
+    )
     args = parser.parse_args()
     output_dir: Path = args.output_dir
 
@@ -114,13 +160,19 @@ def main() -> None:
         print("No endpoints provided. Exiting.")
         return
 
-    clients = [OpenAI(base_url=endpoint, api_key=API_KEY) for endpoint in args.endpoints]
+    base_grammar: str | None = None
+    if args.guided_decoding:
+        base_grammar = read_grammar_template(Path(args.grammar_path))
+        print(f"Guided decoding enabled (grammar: {args.grammar_path})")
+
+    clients = [
+        OpenAI(base_url=endpoint, api_key=API_KEY, timeout=600) for endpoint in args.endpoints
+    ]
     client_cycle = itertools.cycle(clients)
 
     results: list[ChatbotOutput] = []
 
     print(f"Processing {len(dataset)} items...")
-    # Example of using ThreadPoolExecutor to process dataset items in parallel
     with ThreadPoolExecutor(max_workers=args.num_jobs) as executor:
         futures = [
             executor.submit(
@@ -129,6 +181,8 @@ def main() -> None:
                 next(client_cycle),
                 args.model_name,
                 DatasetNames(args.dataset_name),
+                base_grammar=base_grammar,
+                max_completion_tokens=args.max_completion_tokens,
             )
             for item in dataset
         ]
@@ -138,9 +192,13 @@ def main() -> None:
 
     print(f"Processed {len(results)} items.")
 
+    suffix = "_guided" if args.guided_decoding else ""
+    filename = (
+        f"{args.model_name.replace('/', '-')}_{args.dataset_name}"
+        f"_{args.dataset_split}{suffix}.jsonl"
+    )
     with open(
-        output_dir
-        / f"{args.model_name.replace('/', '-')}_{args.dataset_name}_{args.dataset_split}.jsonl",
+        output_dir / filename,
         "w",
         encoding="utf-8",
     ) as processed_response_file:
