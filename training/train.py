@@ -7,12 +7,32 @@ from pathlib import Path
 
 from datasets import Dataset
 import torch
+from tqdm import tqdm
 from transformers import DataCollatorForSeq2Seq, TrainingArguments
 from trl import SFTTrainer
 
 from utils.data import get_data
 from utils.enums import DatasetNames, GemmaModels
+from utils.models import ChatbotMetadata, ChatbotOutput, QueryDetails
 from utils.prompts import SQALE_PROMPT, WIKISQL_PROMPT
+
+
+def build_prompt_and_reference(dataset_name: DatasetNames, item: dict) -> tuple[str, str, str, str]:
+    """Build the generation prompt and extract reference fields for one example."""
+    if dataset_name == DatasetNames.WIKISQL:
+        prompt_template = WIKISQL_PROMPT
+        table = str(item["table"]["header"])
+        query = str(item["question"])
+        human_sql = str(item["sql"]["human_readable"])
+    elif dataset_name == DatasetNames.SQALE:
+        prompt_template = SQALE_PROMPT
+        table = str(item["schema"])
+        query = str(item["question"])
+        human_sql = str(item["query"])
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+    return prompt_template.format(table=table, query=query), table, query, human_sql
 
 
 def format_dataset(dataset_name: DatasetNames, dataset: Dataset, tokenizer):
@@ -50,6 +70,58 @@ def format_dataset(dataset_name: DatasetNames, dataset: Dataset, tokenizer):
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
     return dataset.map(formatting_prompts_func, batched=True)
+
+
+def generate_validation_outputs(
+    model,
+    tokenizer,
+    dataset_name: DatasetNames,
+    model_output_dir: Path,
+    output_path: Path,
+    *,
+    max_new_tokens: int,
+) -> None:
+    """Generate SQL predictions on the validation split for the trained model."""
+    validation_dataset = get_data(dataset_name, "validation")
+
+    FastVisionModel.for_inference(model)
+    model.eval()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        for item in tqdm(validation_dataset, desc="Generating validation outputs"):
+            prompt, table, query, human_sql = build_prompt_and_reference(dataset_name, item)
+            inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+
+            with torch.inference_mode():
+                generated = model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    use_cache=True,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
+
+            prompt_length = inputs["input_ids"].shape[1]
+            response = tokenizer.decode(
+                generated[0][prompt_length:],
+                skip_special_tokens=True,
+            ).strip()
+
+            output = ChatbotOutput(
+                prompt=prompt,
+                response=response,
+                human_sql=human_sql,
+                metadata=ChatbotMetadata(
+                    model_name=str(model_output_dir),
+                    used_guided_decoding=False,
+                ),
+                query_details=QueryDetails(
+                    dataset_name=str(dataset_name),
+                    raw_question=query,
+                    schema_or_table_details=table,
+                ),
+            )
+            output_file.write(output.model_dump_json() + "\n")
 
 
 def main():
@@ -135,6 +207,17 @@ def main():
         default=3407,
         help="Random seed",
     )
+    parser.add_argument(
+        "--validation-max-new-tokens",
+        type=int,
+        default=256,
+        help="Maximum new tokens to generate per validation example after training",
+    )
+    parser.add_argument(
+        "--skip-validation-generation",
+        action="store_true",
+        help="Skip automatic generation on the validation split after training",
+    )
 
     args = parser.parse_args()
 
@@ -200,8 +283,23 @@ def main():
 
     trainer.train()
 
-    model.save_pretrained(str(args.output_dir / "lora_model"))
-    tokenizer.save_pretrained(str(args.output_dir / "lora_model"))
+    model_output_dir = args.output_dir / f"{args.model_name.replace('/', '-')}_ft"
+    model.save_pretrained(str(model_output_dir))
+    tokenizer.save_pretrained(str(model_output_dir))
+
+    if not args.skip_validation_generation:
+        validation_output_path = (
+            args.output_dir / f"{model_output_dir.name}_{args.dataset_name}_validation.jsonl"
+        )
+        generate_validation_outputs(
+            model,
+            tokenizer,
+            dataset_name,
+            model_output_dir,
+            validation_output_path,
+            max_new_tokens=args.validation_max_new_tokens,
+        )
+        print(f"Validation outputs saved to {validation_output_path}")
 
 
 if __name__ == "__main__":

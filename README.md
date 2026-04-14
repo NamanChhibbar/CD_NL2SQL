@@ -146,6 +146,7 @@ For each JSONL file in `scoring_system/data/`, the script prints:
 - an error breakdown reported as fractions of all examples;
 - component-wise scores for `agg`, `select`, `distinct`, `where_col`, `where_op`, `where_val`, `group_by`, `order_by`, and `limit`
 - a `logical_form` score, which is the strict all-or-nothing match rate
+
 ## Generating Outputs
 
 > **Prerequisites:** activate the venv (`source .venv/bin/activate`) and make sure a vLLM server is running. All scripts must be run as **modules** from the **project root** (`python -m scripts.<name>`).
@@ -225,3 +226,23 @@ To quickly verify guided decoding against a few built-in samples without loading
 ```bash
 python -m scripts.test_guided_decoding --base-url http://127.0.0.1:8000/v1
 ```
+
+## Training
+
+Run training from the project root:
+
+```bash
+python training/train.py \
+    --model-name google/gemma-3-4b-it \
+    --dataset-name wikisql \
+    --output-dir outputs/train_run
+```
+
+After training completes, the script now also runs the fine-tuned model on the validation split automatically and writes JSONL output to `<output-dir>/<saved-model-dir>_<dataset>_validation.jsonl`.
+
+Additional training flags:
+
+| Flag | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--validation-max-new-tokens` | No | `256` | Max generated tokens per validation example |
+| `--skip-validation-generation` | No | off | Skip the automatic post-training validation generation step |
