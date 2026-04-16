@@ -3,6 +3,7 @@
 import argparse
 from collections import defaultdict
 import csv
+import math
 from pathlib import Path
 import re
 import sys
@@ -14,8 +15,57 @@ if str(SCORING_SYSTEM_DIR) not in sys.path:
 RUN_SPLITS = ("validation", "test")
 VARIANT_BASE = "base"
 VARIANT_GUIDED = "guided"
+VARIANT_FT = "ft"
+VARIANT_ORDER = (VARIANT_BASE, VARIANT_GUIDED, VARIANT_FT)
+VARIANT_LABELS = {
+    VARIANT_BASE: "Base",
+    VARIANT_GUIDED: "Guided",
+    VARIANT_FT: "FT",
+}
+VARIANT_COLORS = {
+    VARIANT_BASE: "#4c78a8",
+    VARIANT_GUIDED: "#54a24b",
+    VARIANT_FT: "#f58518",
+}
+FALLBACK_VARIANT_COLORS = ("#e45756", "#72b7b2", "#b279a2", "#ff9da6")
 DATASET_NAMES = {"wikisql": "wikisql", "sqale": "SQaLe"}
 MODEL_SIZE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)([bm])", re.IGNORECASE)
+
+
+def extract_model_name_and_variants(model_parts: list[str]) -> tuple[str, list[str]]:
+    """Strip embedded variant tokens from model parts and return the canonical model name."""
+    extracted_variants: list[str] = []
+    cleaned_parts: list[str] = []
+
+    for part in model_parts:
+        if part.lower() == VARIANT_FT:
+            extracted_variants.append(VARIANT_FT)
+            continue
+
+        subparts = part.split("-")
+        cleaned_subparts = []
+        for subpart in subparts:
+            if subpart.lower() == VARIANT_FT:
+                extracted_variants.append(VARIANT_FT)
+                continue
+            cleaned_subparts.append(subpart)
+
+        cleaned_part = "-".join(cleaned_subparts)
+        if cleaned_part:
+            cleaned_parts.append(cleaned_part)
+
+    return "_".join(cleaned_parts), extracted_variants
+
+
+def combine_variants(variant_markers: list[str]) -> str:
+    """Create a stable variant name from extracted markers."""
+    if not variant_markers:
+        return VARIANT_BASE
+
+    unique_markers = set(variant_markers)
+    ordered_markers = [variant for variant in VARIANT_ORDER if variant in unique_markers]
+    extra_markers = sorted(unique_markers.difference(VARIANT_ORDER))
+    return "+".join([*ordered_markers, *extra_markers])
 
 
 def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
@@ -38,15 +88,19 @@ def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
     dataset_token = next(part for part in filtered_parts if part.lower() in DATASET_NAMES)
     filtered_parts.remove(dataset_token)
 
-    variant_name = VARIANT_BASE
-    if "guided" in filtered_parts:
-        filtered_parts.remove("guided")
-        variant_name = VARIANT_GUIDED
+    variant_markers: list[str] = []
+    remaining_parts: list[str] = []
+    for part in filtered_parts:
+        if part.lower() == VARIANT_GUIDED:
+            variant_markers.append(VARIANT_GUIDED)
+            continue
+        remaining_parts.append(part)
 
-    model_name = "_".join(filtered_parts)
+    model_name, embedded_variants = extract_model_name_and_variants(remaining_parts)
     if not model_name:
         return None
 
+    variant_name = combine_variants([*variant_markers, *embedded_variants])
     return model_name, dataset_name, split_name, variant_name
 
 
@@ -79,13 +133,27 @@ def model_sort_key(model_name: str) -> tuple[float, str]:
     return size_in_millions, model_name
 
 
-def variant_sort_key(variant_name: str) -> int:
-    """Place base rows before guided rows in exports."""
-    if variant_name == VARIANT_BASE:
-        return 0
-    if variant_name == VARIANT_GUIDED:
-        return 1
-    return 2
+def variant_sort_key(variant_name: str) -> tuple[int, str]:
+    """Place known variants first and keep other labels stable."""
+    if variant_name in VARIANT_ORDER:
+        return VARIANT_ORDER.index(variant_name), variant_name
+    return len(VARIANT_ORDER), variant_name
+
+
+def variant_label(variant_name: str) -> str:
+    """Return a human-readable label for charts."""
+    return " + ".join(
+        VARIANT_LABELS.get(part, part.upper() if len(part) <= 3 else part.title())
+        for part in variant_name.split("+")
+    )
+
+
+def variant_color(variant_name: str, variant_index: int) -> str:
+    """Pick a consistent color for each charted variant."""
+    return VARIANT_COLORS.get(
+        variant_name,
+        FALLBACK_VARIANT_COLORS[variant_index % len(FALLBACK_VARIANT_COLORS)],
+    )
 
 
 def save_stats_csv(rows: list[dict[str, str | float]], csv_path: Path) -> None:
@@ -121,70 +189,69 @@ def save_logical_form_chart(
     split_scores: dict[str, dict[str, float]],
     output_dir: Path,
 ) -> bool:
-    """Render one grouped bar chart comparing base and guided logical_form."""
-    paired_models = [
+    """Render one grouped bar chart comparing all logical-form variants."""
+    if not split_scores:
+        print(f"No files found for {dataset_name} {split_name}; skipping chart.")
+        return False
+
+    chart_models = [
         model_name
-        for model_name, variant_scores in sorted(
+        for model_name, _variant_scores in sorted(
             split_scores.items(), key=lambda item: model_sort_key(item[0])
         )
-        if VARIANT_BASE in variant_scores and VARIANT_GUIDED in variant_scores
     ]
-    if not paired_models:
-        print(f"No paired base/guided files found for {split_name}; skipping chart.")
+    observed_variants = sorted(
+        {
+            variant_name
+            for variant_scores in split_scores.values()
+            for variant_name in variant_scores
+        },
+        key=variant_sort_key,
+    )
+    if not observed_variants:
+        print(
+            f"No logical-form variant data found for {dataset_name} {split_name}; skipping chart."
+        )
         return False
 
     pyplot = load_pyplot()
-    base_scores = [split_scores[model_name][VARIANT_BASE] for model_name in paired_models]
-    guided_scores = [split_scores[model_name][VARIANT_GUIDED] for model_name in paired_models]
-
-    figure_width = max(8, len(paired_models) * 1.6)
+    figure_width = max(8, len(chart_models) * 1.6)
     figure, axis = pyplot.subplots(figsize=(figure_width, 6))
-    positions = list(range(len(paired_models)))
-    bar_width = 0.36
+    positions = list(range(len(chart_models)))
+    bar_width = 0.8 / len(observed_variants)
 
-    base_positions = [position - bar_width / 2 for position in positions]
-    guided_positions = [position + bar_width / 2 for position in positions]
+    for variant_index, variant_name in enumerate(observed_variants):
+        offset = (variant_index - (len(observed_variants) - 1) / 2) * bar_width
+        variant_positions = [position + offset for position in positions]
+        variant_scores = [
+            split_scores[model_name].get(variant_name, math.nan) for model_name in chart_models
+        ]
 
-    axis.bar(
-        base_positions,
-        base_scores,
-        width=bar_width,
-        color="#4c78a8",
-        label="Base logical_form",
-    )
-    axis.bar(
-        guided_positions,
-        guided_scores,
-        width=bar_width,
-        color="#54a24b",
-        label="Guided logical_form",
-    )
-
-    for position, score in zip(base_positions, base_scores, strict=True):
-        axis.text(
-            position,
-            min(score + 0.015, 0.99),
-            f"{score:.3f}",
-            ha="center",
-            va="bottom",
-            fontsize=10,
+        axis.bar(
+            variant_positions,
+            variant_scores,
+            width=bar_width,
+            color=variant_color(variant_name, variant_index),
+            label=f"{variant_label(variant_name)} logical_form",
         )
 
-    for position, score in zip(guided_positions, guided_scores, strict=True):
-        axis.text(
-            position,
-            min(score + 0.015, 0.99),
-            f"{score:.3f}",
-            ha="center",
-            va="bottom",
-            fontsize=10,
-        )
+        for position, score in zip(variant_positions, variant_scores, strict=True):
+            if math.isnan(score):
+                continue
+            axis.text(
+                position,
+                min(score + 0.015, 0.99),
+                f"{score:.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
 
     axis.set_title(f"Logical Form Performance: {dataset_name} {split_name.capitalize()}")
     axis.set_xlabel("Model")
     axis.set_ylabel("Logical form accuracy")
     axis.set_xticks(positions)
-    axis.set_xticklabels(paired_models, rotation=20, ha="right")
+    axis.set_xticklabels(chart_models, rotation=20, ha="right")
     axis.set_ylim(0, 1.02)
     axis.grid(axis="y", linestyle="--", alpha=0.35)
     axis.legend()
