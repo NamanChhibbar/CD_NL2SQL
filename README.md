@@ -160,7 +160,7 @@ python -m scripts.generate_outputs \
     --dataset-split <SPLIT> \
     --endpoint <VLLM_URL> \
     --output-dir <DIR> \
-    [--guided-decoding]
+    [--guided-decoding | --agent-critic]
 ```
 
 ### Full Flag Reference
@@ -173,9 +173,12 @@ python -m scripts.generate_outputs \
 | `--endpoint` | **Yes** | -- | vLLM base URL (can be passed multiple times for load balancing) |
 | `--output-dir` | **Yes** | -- | Directory to write results |
 | `--guided-decoding` | No | off | Enable EBNF grammar-constrained decoding |
+| `--agent-critic` | No | off | Enable an agent-critic loop where SQLite syntax validation feeds errors back to the model |
+| `--agent-critic-rounds` | No | `3` | Maximum repair rounds when `--agent-critic` is enabled |
 | `--grammar-path` | No | `guided_decoding/sql_grammar.txt` | Custom grammar template (only used with `--guided-decoding`) |
-| `--max-completion-tokens` | No | `256` | Max tokens per response (only used with `--guided-decoding`) |
+| `--max-completion-tokens` | No | `512` | Max tokens per response |
 | `--num-jobs` | No | `12` | Number of parallel workers |
+| `--max-items` | No | all rows | Limit generation to the first N examples |
 
 ### Examples
 
@@ -201,16 +204,34 @@ python -m scripts.generate_outputs \
     --output-dir outputs/
 ```
 
+Generate outputs with the agent-critic loop using the 4B model:
+
+```bash
+python -m scripts.generate_outputs \
+    --model-name google/gemma-3-4b-it \
+    --dataset-name wikisql \
+    --dataset-split validation \
+    --endpoint http://eclairlg02.isi.edu:8802/v1 \
+    --output-dir outputs/ \
+    --agent-critic
+```
+
 ### Output Format
 
-Results are saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided].jsonl`. Each line contains:
+Results are saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided|_agent_critic].jsonl`. Each line contains:
 
 ```json
 {
   "prompt": "...",
   "response": "...",
   "human_sql": "...",
-  "metadata": { "model_name": "...", "used_guided_decoding": true },
+  "metadata": {
+    "model_name": "...",
+    "used_guided_decoding": false,
+    "generation_approach": "agent_critic",
+    "agent_critic_rounds": 2,
+    "final_validation_error": null
+  },
   "query_details": {
     "dataset_name": "...",
     "raw_question": "...",

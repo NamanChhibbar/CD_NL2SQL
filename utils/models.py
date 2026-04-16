@@ -8,6 +8,9 @@ class ChatbotMetadata(BaseModel):
 
     model_name: str
     used_guided_decoding: bool
+    generation_approach: str | None = None
+    agent_critic_rounds: int | None = None
+    final_validation_error: str | None = None
 
 
 class QueryDetails(BaseModel):
