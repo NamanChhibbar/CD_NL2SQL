@@ -23,7 +23,8 @@ from utils.sql_validation import validate_sql_with_sqlglot
 API_KEY = os.getenv("NL2SQL_API_KEY", "dummy")
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
+DEFAULT_SQL_GRAMMAR_PATH = Path("guided_decoding/sql_grammar.txt")
+DEFAULT_WIKISQL_GRAMMAR_PATH = Path("guided_decoding/wikisql_grammar.txt")
 SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries for sqlite."
 AGENT_CRITIC_SYSTEM_PROMPT = (
     "You generate exactly one SQL query that answers the user's question. "
@@ -160,14 +161,55 @@ def generate_with_agent_critic(
     return last_output, max_rounds, last_error
 
 
+def default_grammar_path_for(dataset_name: DatasetNames) -> Path:
+    """Return the default grammar template for a dataset."""
+    if dataset_name == DatasetNames.WIKISQL:
+        return DEFAULT_WIKISQL_GRAMMAR_PATH
+    return DEFAULT_SQL_GRAMMAR_PATH
+
+
+def get_response_status(response: Any) -> str | None:
+    """Best-effort extraction of the OpenAI/vLLM response status."""
+    status = getattr(response, "status", None)
+    return None if status is None else str(status)
+
+
+def get_incomplete_reason(response: Any) -> str | None:
+    """Best-effort extraction of why a response stopped before completion."""
+    incomplete_details = getattr(response, "incomplete_details", None)
+    if incomplete_details is None:
+        return None
+
+    reason = getattr(incomplete_details, "reason", None)
+    if reason is not None:
+        return str(reason)
+
+    return str(incomplete_details)
+
+
+def get_output_tokens(response: Any) -> int | None:
+    """Best-effort extraction of the reported output-token count."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+
+    output_tokens = getattr(usage, "output_tokens", None)
+    if output_tokens is None:
+        output_tokens = getattr(usage, "completion_tokens", None)
+
+    return output_tokens if isinstance(output_tokens, int) else None
+
+
 def process_item(
     item: dict[str, Any],
     client: OpenAI,
     model_name: str,
     dataset_name: DatasetNames,
     *,
+    dataset_index: int | None = None,
     base_grammar: str | None = None,
     use_agent_critic: bool = False,
+    temperature: float | None = 0.0,
     max_completion_tokens: int = 256,
     agent_critic_rounds: int = 3,
     max_retries: int = 3,
@@ -309,8 +351,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--grammar-path",
         type=Path,
-        default=DEFAULT_GRAMMAR_PATH,
-        help="Path to the EBNF grammar template (used with --guided-decoding)",
+        default=None,
+        help=(
+            "Path to the EBNF grammar template. Defaults to a WikiSQL-specific grammar "
+            "for WikiSQL and the general SQL grammar otherwise."
+        ),
     )
     parser.add_argument(
         "--max-completion-tokens",
@@ -323,6 +368,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=60.0,
         help="Timeout in seconds for API requests",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Sampling temperature for every generation run.",
     )
     parser.add_argument(
         "--max-items",
@@ -354,8 +405,9 @@ def main() -> None:
 
     base_grammar: str | None = None
     if args.guided_decoding:
-        base_grammar = read_grammar_template(Path(args.grammar_path))
-        print(f"Guided decoding enabled (grammar: {args.grammar_path})")
+        grammar_path = args.grammar_path or default_grammar_path_for(dataset_name)
+        base_grammar = read_grammar_template(grammar_path)
+        print(f"Guided decoding enabled (grammar: {grammar_path})")
     elif args.agent_critic:
         print(f"Agent-critic enabled (max rounds: {args.agent_critic_rounds})")
 
@@ -381,20 +433,22 @@ def main() -> None:
         output_file_path.open("w", encoding="utf-8") as output_file,
         ThreadPoolExecutor(max_workers=args.num_jobs) as executor,
     ):
-        futures = [
+        futures = {
             executor.submit(
                 process_item,
                 item,
                 next(client_cycle),
                 args.model_name,
                 dataset_name,
+                dataset_index=index,
                 base_grammar=base_grammar,
                 use_agent_critic=args.agent_critic,
+                temperature=args.temperature,
                 max_completion_tokens=args.max_completion_tokens,
                 agent_critic_rounds=args.agent_critic_rounds,
-            )
-            for item in dataset
-        ]
+            ): index
+            for index, item in enumerate(dataset)
+        }
 
         processed_count = 0
         for future in tqdm(as_completed(futures), total=len(futures), desc="Generating outputs"):

@@ -1,0 +1,25 @@
+root ::= ws query ";"
+
+query ::= "SELECT" s select_list s "FROM" s table_ref (s where_clause)?
+
+select_list ::= select_item (ws "," ws select_item)*
+select_item ::= column_ref | agg_expr | "*"
+
+where_clause ::= "WHERE" s condition (s "AND" s condition)*
+condition ::= column_ref s op s value
+
+agg_expr ::= agg_func "(" ws agg_arg ws ")"
+agg_arg ::= "*" | column_ref
+agg_func ::= "COUNT" | "AVG" | "SUM" | "MAX" | "MIN"
+
+op ::= ">=" | "<=" | "!=" | "=" | ">" | "<"
+
+table_ref ::= ( __TABLE_REF__ )
+column_ref ::= ( __COLUMN_REF__ )
+
+value ::= number | string
+number ::= "-"? [0-9]+ ("." [0-9]+)?
+string ::= "'" ([^'] | "''")* "'"
+
+ws ::= [ \t\n]*
+s ::= [ \t\n]+

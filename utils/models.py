@@ -11,12 +11,18 @@ class ChatbotMetadata(BaseModel):
     generation_approach: str | None = None
     agent_critic_rounds: int | None = None
     final_validation_error: str | None = None
+    temperature: float | None = None
+    max_output_tokens: int | None = None
+    response_status: str | None = None
+    incomplete_reason: str | None = None
+    output_tokens: int | None = None
 
 
 class QueryDetails(BaseModel):
     """Dataset Input Details."""
 
     dataset_name: str
+    dataset_index: int | None = None
     raw_question: str
     schema_or_table_details: str
 

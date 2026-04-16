@@ -178,8 +178,9 @@ python -m scripts.generate_outputs \
 | `--guided-decoding` | No | off | Enable EBNF grammar-constrained decoding |
 | `--agent-critic` | No | off | Enable an agent-critic loop where SQLite syntax validation feeds errors back to the model |
 | `--agent-critic-rounds` | No | `3` | Maximum repair rounds when `--agent-critic` is enabled |
-| `--grammar-path` | No | `guided_decoding/sql_grammar.txt` | Custom grammar template (only used with `--guided-decoding`) |
+| `--grammar-path` | No | WikiSQL grammar for `wikisql`, general SQL grammar otherwise | Custom grammar template (only used with `--guided-decoding`) |
 | `--max-completion-tokens` | No | `512` | Max tokens per response |
+| `--temperature` | No | `0.0` | Sampling temperature for every run |
 | `--num-jobs` | No | `12` | Number of parallel workers |
 | `--max-items` | No | all rows | Limit generation to the first N examples |
 
@@ -232,11 +233,17 @@ Results are saved as JSONL to `<output-dir>/<model>_<dataset>_<split>[_guided|_a
     "model_name": "...",
     "used_guided_decoding": false,
     "generation_approach": "agent_critic",
+    "temperature": 0.0,
+    "max_output_tokens": 256,
+    "response_status": "...",
+    "incomplete_reason": null,
+    "output_tokens": 42
     "agent_critic_rounds": 2,
     "final_validation_error": null
   },
   "query_details": {
     "dataset_name": "...",
+    "dataset_index": 0,
     "raw_question": "...",
     "schema_or_table_details": "..."
   }

@@ -250,7 +250,12 @@ def save_metric_chart(
         )
         return False
 
-    pyplot = load_pyplot()
+    try:
+        pyplot = load_pyplot()
+    except ModuleNotFoundError as error:
+        print(f"Could not import {error.name}; skipping chart generation.")
+        return False
+
     figure_width = max(8, len(chart_models) * 1.6)
     figure, axis = pyplot.subplots(figsize=(figure_width, 6))
     positions = list(range(len(chart_models)))

@@ -12,8 +12,7 @@ from utils.grammar import build_dynamic_grammar, read_grammar_template
 
 DEFAULT_MODEL = "google/gemma-3-12b-it"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
-DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
-DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries."
+DEFAULT_GRAMMAR_PATH = "guided_decoding/wikisql_grammar.txt"
 
 
 @dataclass
@@ -125,20 +124,17 @@ def main() -> None:
 
         prompt = build_prompt(sample.schema, sample.question)
 
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=args.model,
-            messages=[
-                {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+            input=prompt,
             temperature=0.0,
-            max_completion_tokens=128,
+            max_output_tokens=512,
             extra_body={
                 "structured_outputs": {"grammar": grammar},
             },
         )
 
-        output = response.choices[0].message.content or ""
+        output = response.output_text
         print("Model output:")
         print(output.strip())
         print()

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import re
 
-from schema import ParsedSQL
+from schema import Condition, ParsedSQL
 from sql_parser import parse_sql
 
 from utils.sql_validation import validate_sql_with_sqlglot
@@ -34,6 +34,11 @@ def multiset_match_under_value_equality(
             return False
 
     return True
+
+
+def multiset_exact_match(predicted_values: list[str], gold_values: list[str]) -> bool:
+    """Return True when two lists contain the same normalized strings."""
+    return sorted(predicted_values) == sorted(gold_values)
 
 
 def is_numeric_string(text: str) -> bool:
@@ -78,40 +83,120 @@ def values_are_equivalent(left: str, right: str) -> bool:
 
 
 def extract_sql_from_response(model_text: str) -> str:
-    """If the model wrapped SQL in a ```sql fence, return the inner SQL; otherwise strip the whole text."""
-    fence_match = re.search(r"```sql\n(.*?)```", model_text, re.DOTALL)
+    """Extract the first SQL statement from a model response."""
+    fence_match = re.search(r"```(?:sql)?\s*(.*?)```", model_text, re.DOTALL | re.IGNORECASE)
     if fence_match:
-        return fence_match.group(1).strip()
-    return model_text.strip()
+        model_text = fence_match.group(1)
+
+    return trim_after_first_statement(model_text.strip())
+
+
+def trim_after_first_statement(sql: str) -> str:
+    """Return SQL up to the first semicolon that is not inside a quote."""
+    in_single_quote = False
+    in_double_quote = False
+
+    for index, character in enumerate(sql):
+        if character == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+        elif character == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+        elif character == ";" and not in_single_quote and not in_double_quote:
+            return sql[: index + 1].strip()
+
+    return sql.strip()
 
 
 def normalize_identifier_or_literal(token: str) -> str:
-    """Lowercase, strip, and remove a single layer of surrounding quotes if present."""
-    token = token.strip().lower()  # stripping and lowercasing the token
+    """Backward-compatible normalization for contexts where token type is unknown."""
+    return normalize_literal(token)
+
+
+def normalize_identifier(token: str) -> str:
+    """Normalize SQL identifiers without turning string literals into identifiers."""
+    token = token.strip().lower()
 
     if (
-        token.startswith("'") and token.endswith("'")
-    ) or (  # if the token starts with a single quote and ends with a single quote
-        token.startswith('"')
-        and token.endswith(
-            '"'
-        )  # if the token starts with a double quote and ends with a double quote
+        (token.startswith('"') and token.endswith('"'))
+        or (token.startswith("`") and token.endswith("`"))
+        or (token.startswith("[") and token.endswith("]"))
     ):
-        token = token[1:-1]  # removing the surrounding quotes
+        token = token[1:-1]
 
     return token
+
+
+def normalize_literal(token: str) -> str:
+    """Normalize SQL literal values for lenient value comparison."""
+    token = token.strip().lower()
+
+    if (token.startswith("'") and token.endswith("'")) or (
+        token.startswith('"') and token.endswith('"')
+    ):
+        token = token[1:-1]
+
+    return token
+
+
+def where_conditions_match(
+    predicted_conditions: list[Condition], gold_conditions: list[Condition]
+) -> bool:
+    """Return True when WHERE predicates match as column/operator/value triples."""
+    if len(predicted_conditions) != len(gold_conditions):
+        return False
+
+    gold_used = [False] * len(gold_conditions)
+
+    for predicted_condition in predicted_conditions:
+        predicted_column = normalize_identifier(predicted_condition.column)
+        predicted_operator = predicted_condition.operator.strip().lower()
+        predicted_value = normalize_literal(str(predicted_condition.value))
+
+        matched = False
+        for gold_index, gold_condition in enumerate(gold_conditions):
+            if gold_used[gold_index]:
+                continue
+
+            gold_column = normalize_identifier(gold_condition.column)
+            gold_operator = gold_condition.operator.strip().lower()
+            gold_value = normalize_literal(str(gold_condition.value))
+
+            if (
+                predicted_column == gold_column
+                and predicted_operator == gold_operator
+                and values_are_equivalent(predicted_value, gold_value)
+            ):
+                gold_used[gold_index] = True
+                matched = True
+                break
+
+        if not matched:
+            return False
+
+    return True
 
 
 def canonicalize_parse(parsed: ParsedSQL) -> dict:
     """Build an order-insensitive dict representation of a parse."""
     return {
-        "select": sorted(zip(parsed.select.aggregators, parsed.select.columns, strict=True)),
+        "select": sorted(
+            (aggregator, normalize_identifier(column))
+            for aggregator, column in zip(
+                parsed.select.aggregators, parsed.select.columns, strict=True
+            )
+        ),
         "where": sorted(
-            (condition.column, condition.operator, str(condition.value))
+            (
+                normalize_identifier(condition.column),
+                condition.operator.strip().lower(),
+                normalize_literal(str(condition.value)),
+            )
             for condition in parsed.where
         ),
-        "group_by": sorted(parsed.group_by),
-        "order_by": sorted((item.column, item.direction) for item in parsed.order_by),
+        "group_by": sorted(normalize_identifier(column) for column in parsed.group_by),
+        "order_by": sorted(
+            (normalize_identifier(item.column), item.direction) for item in parsed.order_by
+        ),
         "limit": parsed.limit,
     }
 
@@ -186,16 +271,20 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
             gold_aggs = sorted(parsed_gold.select.aggregators)
 
             predicted_cols = sorted(
-                normalize_identifier_or_literal(column)
-                for column in parsed_predicted.select.columns
+                normalize_identifier(column) for column in parsed_predicted.select.columns
             )
             gold_cols = sorted(
-                normalize_identifier_or_literal(column) for column in parsed_gold.select.columns
+                normalize_identifier(column) for column in parsed_gold.select.columns
             )
 
-            if predicted_cols == gold_cols and predicted_aggs == gold_aggs:
+            if predicted_aggs == gold_aggs:
                 aggregate_matches += 1
+
+            if predicted_cols == gold_cols:
                 select_list_matches += 1
+
+            if predicted_cols == gold_cols and predicted_aggs == gold_aggs:
+                pass
             elif predicted_cols == gold_cols:
                 select_clause_matches = False
                 first_failure_counts["col_only"] += 1
@@ -212,49 +301,39 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
                 distinct_clause_matches = False
 
             # --- WHERE: columns, operators, and values scored separately ---
-            predicted_where_tuples = sorted(
-                (condition.column, condition.operator, str(condition.value))
-                for condition in parsed_predicted.where
-            )
-            gold_where_tuples = sorted(
-                (condition.column, condition.operator, str(condition.value))
-                for condition in parsed_gold.where
-            )
-
             predicted_where_columns = [
-                normalize_identifier_or_literal(column) for column, _, _ in predicted_where_tuples
+                normalize_identifier(condition.column) for condition in parsed_predicted.where
             ]
             gold_where_columns = [
-                normalize_identifier_or_literal(column) for column, _, _ in gold_where_tuples
+                normalize_identifier(condition.column) for condition in parsed_gold.where
             ]
 
-            if multiset_match_under_value_equality(predicted_where_columns, gold_where_columns):
+            if multiset_exact_match(predicted_where_columns, gold_where_columns):
                 where_column_matches += 1
             else:
                 where_clause_matches = False
 
             predicted_where_operators = [
-                normalize_identifier_or_literal(operator)
-                for _, operator, _ in predicted_where_tuples
+                condition.operator.strip().lower() for condition in parsed_predicted.where
             ]
             gold_where_operators = [
-                normalize_identifier_or_literal(operator) for _, operator, _ in gold_where_tuples
+                condition.operator.strip().lower() for condition in parsed_gold.where
             ]
 
-            if predicted_where_operators == gold_where_operators:
+            if multiset_exact_match(predicted_where_operators, gold_where_operators):
                 where_operator_matches += 1
             else:
                 where_clause_matches = False
 
-            predicted_where_values_raw = [str(value) for _, _, value in predicted_where_tuples]
-            gold_where_values_raw = [str(value) for _, _, value in gold_where_tuples]
+            predicted_where_values_raw = [
+                str(condition.value) for condition in parsed_predicted.where
+            ]
+            gold_where_values_raw = [str(condition.value) for condition in parsed_gold.where]
 
             predicted_where_values_norm = [
-                normalize_identifier_or_literal(value) for value in predicted_where_values_raw
+                normalize_literal(value) for value in predicted_where_values_raw
             ]
-            gold_where_values_norm = [
-                normalize_identifier_or_literal(value) for value in gold_where_values_raw
-            ]
+            gold_where_values_norm = [normalize_literal(value) for value in gold_where_values_raw]
 
             if multiset_match_under_value_equality(
                 sorted(predicted_where_values_norm), sorted(gold_where_values_norm)
@@ -263,17 +342,26 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
             else:
                 where_clause_matches = False
 
+            where_clause_matches = where_conditions_match(parsed_predicted.where, parsed_gold.where)
+
             # --- GROUP BY ---
-            if sorted(parsed_predicted.group_by) == sorted(parsed_gold.group_by):
+            predicted_group_by = sorted(
+                normalize_identifier(column) for column in parsed_predicted.group_by
+            )
+            gold_group_by = sorted(normalize_identifier(column) for column in parsed_gold.group_by)
+            if predicted_group_by == gold_group_by:
                 group_by_matches += 1
             else:
                 group_by_clause_matches = False
 
             # --- ORDER BY ---
             predicted_order = sorted(
-                (item.column, item.direction) for item in parsed_predicted.order_by
+                (normalize_identifier(item.column), item.direction)
+                for item in parsed_predicted.order_by
             )
-            gold_order = sorted((item.column, item.direction) for item in parsed_gold.order_by)
+            gold_order = sorted(
+                (normalize_identifier(item.column), item.direction) for item in parsed_gold.order_by
+            )
 
             if predicted_order == gold_order:
                 order_by_matches += 1
