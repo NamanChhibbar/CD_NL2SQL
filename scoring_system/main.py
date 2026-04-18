@@ -15,21 +15,28 @@ if str(SCORING_SYSTEM_DIR) not in sys.path:
 RUN_SPLITS = ("validation", "test")
 VARIANT_BASE = "base"
 VARIANT_GUIDED = "guided"
+VARIANT_AGENT_CRITIC = "agent_critic"
 VARIANT_FT = "ft"
-VARIANT_ORDER = (VARIANT_BASE, VARIANT_GUIDED, VARIANT_FT)
+VARIANT_ORDER = (VARIANT_BASE, VARIANT_GUIDED, VARIANT_AGENT_CRITIC, VARIANT_FT)
 VARIANT_LABELS = {
     VARIANT_BASE: "Base",
     VARIANT_GUIDED: "Guided",
+    VARIANT_AGENT_CRITIC: "Agent Critic",
     VARIANT_FT: "FT",
 }
 VARIANT_COLORS = {
     VARIANT_BASE: "#4c78a8",
     VARIANT_GUIDED: "#54a24b",
+    VARIANT_AGENT_CRITIC: "#b279a2",
     VARIANT_FT: "#f58518",
 }
 FALLBACK_VARIANT_COLORS = ("#e45756", "#72b7b2", "#b279a2", "#ff9da6")
 DATASET_NAMES = {"wikisql": "wikisql", "sqale": "SQaLe"}
 MODEL_SIZE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)([bm])", re.IGNORECASE)
+EXPLICIT_VARIANT_SUFFIXES = (
+    (("agent", "critic"), VARIANT_AGENT_CRITIC),
+    (("guided",), VARIANT_GUIDED),
+)
 
 
 def extract_model_name_and_variants(model_parts: list[str]) -> tuple[str, list[str]]:
@@ -68,6 +75,27 @@ def combine_variants(variant_markers: list[str]) -> str:
     return "+".join([*ordered_markers, *extra_markers])
 
 
+def extract_explicit_variant_suffixes(parts: list[str]) -> tuple[list[str], list[str]]:
+    """Strip known variant suffixes from the end of a filename token list."""
+    remaining_parts = parts.copy()
+    variant_markers: list[str] = []
+
+    while remaining_parts:
+        for suffix_parts, variant_name in EXPLICIT_VARIANT_SUFFIXES:
+            if (
+                tuple(part.lower() for part in remaining_parts[-len(suffix_parts) :])
+                != suffix_parts
+            ):
+                continue
+            del remaining_parts[-len(suffix_parts) :]
+            variant_markers.append(variant_name)
+            break
+        else:
+            break
+
+    return remaining_parts, variant_markers
+
+
 def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
     """Infer model name, dataset, run split, and variant from a JSONL filename."""
     parts = jsonl_path.stem.split("_")
@@ -88,14 +116,7 @@ def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
     dataset_token = next(part for part in filtered_parts if part.lower() in DATASET_NAMES)
     filtered_parts.remove(dataset_token)
 
-    variant_markers: list[str] = []
-    remaining_parts: list[str] = []
-    for part in filtered_parts:
-        if part.lower() == VARIANT_GUIDED:
-            variant_markers.append(VARIANT_GUIDED)
-            continue
-        remaining_parts.append(part)
-
+    remaining_parts, variant_markers = extract_explicit_variant_suffixes(filtered_parts)
     model_name, embedded_variants = extract_model_name_and_variants(remaining_parts)
     if not model_name:
         return None
