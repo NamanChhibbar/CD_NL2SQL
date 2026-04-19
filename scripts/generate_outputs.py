@@ -1,7 +1,5 @@
 """Generate model outputs for NL2SQL datasets."""
 
-from __future__ import annotations
-
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import itertools
@@ -9,12 +7,13 @@ import logging
 import os
 from pathlib import Path
 import re
-import sqlite3
 import time
 from typing import Any
 
 from datasets import Dataset
 from openai import APIError, APITimeoutError, OpenAI
+from sqlglot import Dialect, exp, parse_one
+from sqlglot.errors import ParseError, TokenError
 from tqdm import tqdm
 
 from utils.data import get_data
@@ -27,19 +26,15 @@ API_KEY = os.getenv("NL2SQL_API_KEY", "dummy")
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_GRAMMAR_PATH = "guided_decoding/sql_grammar.txt"
-SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries."
+SYSTEM_PROMPT = "You are a helpful assistant that generates SQL queries for sqlite."
 AGENT_CRITIC_SYSTEM_PROMPT = (
     "You generate exactly one SQL query that answers the user's question. "
-    "Return SQL only. Do not include markdown fences, explanations, or commentary."
+    "Return SQL only. Do not include markdown fences, explanations, or commentary. "
+    "The SQL should be designed for sqlite."
 )
 SQL_FENCE_RE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-SQLITE_SYNTAX_ERROR_MARKERS = (
-    "syntax error",
-    "incomplete input",
-    "unrecognized token",
-    "unterminated",
-    "unexpected",
-)
+SQL_VALIDATION_DIALECT = "sqlite"
+SQLITE_DIALECT = Dialect.get_or_raise(SQL_VALIDATION_DIALECT)
 
 
 def build_prompt_and_reference(
@@ -75,26 +70,32 @@ def extract_sql_from_response(text: str) -> str:
     return stripped
 
 
-def is_sqlite_syntax_error(message: str) -> bool:
-    """Return True when SQLite indicates a parse-level issue."""
-    lowered = message.lower()
-    return any(marker in lowered for marker in SQLITE_SYNTAX_ERROR_MARKERS)
+def normalized_sql_token_types(sql: str) -> list[str]:
+    """Return the SQLite token stream shape, ignoring trailing semicolons."""
+    return [
+        token.token_type.name
+        for token in SQLITE_DIALECT.tokenize(sql)
+        if token.token_type.name != "SEMICOLON"
+    ]
 
 
-def validate_sql_with_sqlite(sql_text: str) -> tuple[bool, str | None]:
-    """Use SQLite parsing to catch syntax errors in generated SQL."""
+def validate_sql_with_sqlglot(sql_text: str) -> tuple[bool, str | None]:
+    """Use sqlglot's SQLite parser to catch syntax errors in generated SQL."""
     sql = extract_sql_from_response(sql_text)
     if not sql:
         return False, "The response was empty."
 
     try:
-        with sqlite3.connect(":memory:") as connection:
-            connection.execute(f"EXPLAIN QUERY PLAN {sql}")
-    except sqlite3.Error as exc:
-        message = str(exc)
-        if is_sqlite_syntax_error(message):
-            return False, message
-        return True, None
+        parsed = parse_one(sql, dialect=SQL_VALIDATION_DIALECT)
+    except (ParseError, TokenError) as exc:
+        return False, str(exc)
+
+    if isinstance(parsed, exp.Select) and not parsed.expressions:
+        return False, "SELECT statements must include at least one projection."
+
+    regenerated_sql = parsed.sql(dialect=SQL_VALIDATION_DIALECT)
+    if normalized_sql_token_types(sql) != normalized_sql_token_types(regenerated_sql):
+        return False, "The SQL could not be parsed cleanly by sqlglot."
 
     return True, None
 
@@ -167,7 +168,7 @@ def generate_with_agent_critic(
     max_completion_tokens: int,
     max_rounds: int,
 ) -> tuple[str, int, str | None]:
-    """Run an agent-critic loop using SQLite syntax validation as the critic."""
+    """Run an agent-critic loop using sqlglot SQLite-dialect validation as the critic."""
     conversation: list[dict[str, str]] = [{"role": "user", "content": prompt}]
     last_output = ""
     last_error: str | None = None
@@ -184,7 +185,7 @@ def generate_with_agent_critic(
             max_completion_tokens=max_completion_tokens,
         )
 
-        is_valid, error_message = validate_sql_with_sqlite(last_output)
+        is_valid, error_message = validate_sql_with_sqlglot(last_output)
         if is_valid:
             return last_output, round_index, None
 
@@ -195,8 +196,9 @@ def generate_with_agent_critic(
                 {
                     "role": "user",
                     "content": (
-                        "The SQL you produced is not syntactically valid for SQLite.\n"
-                        f"SQLite reported: {error_message}\n"
+                        "The SQL you produced is not syntactically valid for the SQLite "
+                        "dialect.\n"
+                        f"sqlglot reported: {error_message}\n"
                         "Generate a corrected SQL query only."
                     ),
                 },
@@ -335,7 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--agent-critic",
         action="store_true",
         default=False,
-        help="Enable an agent-critic loop where SQLite syntax validation critiques bad SQL",
+        help="Enable an agent-critic loop where sqlglot SQLite validation critiques bad SQL",
     )
     parser.add_argument(
         "--agent-critic-rounds",
