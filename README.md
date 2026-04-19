@@ -145,7 +145,10 @@ For each JSONL file in `scoring_system/data/`, the script prints:
 
 - an error breakdown reported as fractions of all examples;
 - component-wise scores for `agg`, `select`, `distinct`, `where_col`, `where_op`, `where_val`, `group_by`, `order_by`, and `limit`
+- a `sql_syntax_valid` score, which is the fraction of responses that `sqlglot` can parse cleanly as SQLite SQL
 - a `logical_form` score, which is the strict all-or-nothing match rate
+
+It also writes grouped bar charts for both `logical_form` and `sql_syntax_valid`, using the same per-model/per-variant layout.
 
 ## Generating Outputs
 
