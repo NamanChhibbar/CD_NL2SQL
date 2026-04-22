@@ -15,9 +15,6 @@ class ChatbotMetadata(BaseModel):
     final_validation_error: str | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
-    response_status: str | None = None
-    incomplete_reason: str | None = None
-    output_tokens: int | None = None
     guided_decoding_grammar_path: Path | str | None = None
 
 

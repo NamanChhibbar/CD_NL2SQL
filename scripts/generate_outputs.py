@@ -168,48 +168,14 @@ def default_grammar_path_for(dataset_name: DatasetNames) -> Path:
     return DEFAULT_SQL_GRAMMAR_PATH
 
 
-def get_response_status(response: Any) -> str | None:
-    """Best-effort extraction of the OpenAI/vLLM response status."""
-    status = getattr(response, "status", None)
-    return None if status is None else str(status)
-
-
-def get_incomplete_reason(response: Any) -> str | None:
-    """Best-effort extraction of why a response stopped before completion."""
-    incomplete_details = getattr(response, "incomplete_details", None)
-    if incomplete_details is None:
-        return None
-
-    reason = getattr(incomplete_details, "reason", None)
-    if reason is not None:
-        return str(reason)
-
-    return str(incomplete_details)
-
-
-def get_output_tokens(response: Any) -> int | None:
-    """Best-effort extraction of the reported output-token count."""
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return None
-
-    output_tokens = getattr(usage, "output_tokens", None)
-    if output_tokens is None:
-        output_tokens = getattr(usage, "completion_tokens", None)
-
-    return output_tokens if isinstance(output_tokens, int) else None
-
-
 def process_item(
     item: dict[str, Any],
     client: OpenAI,
     model_name: str,
     dataset_name: DatasetNames,
     *,
-    dataset_index: int | None = None,
     base_grammar: str | None = None,
     use_agent_critic: bool = False,
-    temperature: float | None = 0.0,
     max_completion_tokens: int = 256,
     agent_critic_rounds: int = 3,
     max_retries: int = 3,
@@ -371,12 +337,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Timeout in seconds for API requests",
     )
     parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.0,
-        help="Sampling temperature for every generation run.",
-    )
-    parser.add_argument(
         "--max-items",
         type=int,
         help="Limit the number of dataset rows processed",
@@ -441,10 +401,8 @@ def main() -> None:
                 next(client_cycle),
                 args.model_name,
                 dataset_name,
-                dataset_index=index,
                 base_grammar=base_grammar,
                 use_agent_critic=args.agent_critic,
-                temperature=args.temperature,
                 max_completion_tokens=args.max_completion_tokens,
                 agent_critic_rounds=args.agent_critic_rounds,
             ): index
