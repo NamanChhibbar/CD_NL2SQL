@@ -229,6 +229,15 @@ def process_item(
             else:
                 LOGGER.error("Max retries reached. Skipping item.")
                 return None
+        except ValueError as vexc:
+            LOGGER.error(
+                "Error processing item (attempt %s/%s): %s",
+                attempt + 1,
+                max_retries,
+                vexc,
+            )
+            LOGGER.error("Skipping item due to SQL grammar error.")
+            return None
 
     return None
 
