@@ -15,21 +15,40 @@ if str(SCORING_SYSTEM_DIR) not in sys.path:
 RUN_SPLITS = ("validation", "test")
 VARIANT_BASE = "base"
 VARIANT_GUIDED = "guided"
+VARIANT_AGENT_CRITIC = "agent_critic"
 VARIANT_FT = "ft"
-VARIANT_ORDER = (VARIANT_BASE, VARIANT_GUIDED, VARIANT_FT)
+VARIANT_ORDER = (VARIANT_BASE, VARIANT_GUIDED, VARIANT_AGENT_CRITIC, VARIANT_FT)
 VARIANT_LABELS = {
     VARIANT_BASE: "Base",
     VARIANT_GUIDED: "Guided",
+    VARIANT_AGENT_CRITIC: "Agent Critic",
     VARIANT_FT: "FT",
 }
 VARIANT_COLORS = {
     VARIANT_BASE: "#4c78a8",
     VARIANT_GUIDED: "#54a24b",
+    VARIANT_AGENT_CRITIC: "#b279a2",
     VARIANT_FT: "#f58518",
 }
 FALLBACK_VARIANT_COLORS = ("#e45756", "#72b7b2", "#b279a2", "#ff9da6")
 DATASET_NAMES = {"wikisql": "wikisql", "sqale": "SQaLe"}
 MODEL_SIZE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)([bm])", re.IGNORECASE)
+EXPLICIT_VARIANT_SUFFIXES = (
+    (("agent", "critic"), VARIANT_AGENT_CRITIC),
+    (("guided",), VARIANT_GUIDED),
+)
+CHART_METRICS = {
+    "logical_form": {
+        "title": "Logical Form Performance",
+        "y_label": "Logical form accuracy",
+        "filename_prefix": "logical_form",
+    },
+    "sql_syntax_valid": {
+        "title": "SQL Syntax Validity",
+        "y_label": "Syntax-valid SQL rate",
+        "filename_prefix": "sql_syntax_valid",
+    },
+}
 
 
 def extract_model_name_and_variants(model_parts: list[str]) -> tuple[str, list[str]]:
@@ -68,6 +87,27 @@ def combine_variants(variant_markers: list[str]) -> str:
     return "+".join([*ordered_markers, *extra_markers])
 
 
+def extract_explicit_variant_suffixes(parts: list[str]) -> tuple[list[str], list[str]]:
+    """Strip known variant suffixes from the end of a filename token list."""
+    remaining_parts = parts.copy()
+    variant_markers: list[str] = []
+
+    while remaining_parts:
+        for suffix_parts, variant_name in EXPLICIT_VARIANT_SUFFIXES:
+            if (
+                tuple(part.lower() for part in remaining_parts[-len(suffix_parts) :])
+                != suffix_parts
+            ):
+                continue
+            del remaining_parts[-len(suffix_parts) :]
+            variant_markers.append(variant_name)
+            break
+        else:
+            break
+
+    return remaining_parts, variant_markers
+
+
 def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
     """Infer model name, dataset, run split, and variant from a JSONL filename."""
     parts = jsonl_path.stem.split("_")
@@ -88,14 +128,7 @@ def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
     dataset_token = next(part for part in filtered_parts if part.lower() in DATASET_NAMES)
     filtered_parts.remove(dataset_token)
 
-    variant_markers: list[str] = []
-    remaining_parts: list[str] = []
-    for part in filtered_parts:
-        if part.lower() == VARIANT_GUIDED:
-            variant_markers.append(VARIANT_GUIDED)
-            continue
-        remaining_parts.append(part)
-
+    remaining_parts, variant_markers = extract_explicit_variant_suffixes(filtered_parts)
     model_name, embedded_variants = extract_model_name_and_variants(remaining_parts)
     if not model_name:
         return None
@@ -183,13 +216,16 @@ def save_stats_csv(rows: list[dict[str, str | float]], csv_path: Path) -> None:
     print(f"Saved CSV stats to {csv_path}")
 
 
-def save_logical_form_chart(
+def save_metric_chart(
     dataset_name: str,
     split_name: str,
     split_scores: dict[str, dict[str, float]],
     output_dir: Path,
+    *,
+    metric_name: str,
 ) -> bool:
-    """Render one grouped bar chart comparing all logical-form variants."""
+    """Render one grouped bar chart comparing all variants for one metric."""
+    metric_config = CHART_METRICS[metric_name]
     if not split_scores:
         print(f"No files found for {dataset_name} {split_name}; skipping chart.")
         return False
@@ -210,7 +246,7 @@ def save_logical_form_chart(
     )
     if not observed_variants:
         print(
-            f"No logical-form variant data found for {dataset_name} {split_name}; skipping chart."
+            f"No {metric_name} variant data found for {dataset_name} {split_name}; skipping chart."
         )
         return False
 
@@ -232,7 +268,7 @@ def save_logical_form_chart(
             variant_scores,
             width=bar_width,
             color=variant_color(variant_name, variant_index),
-            label=f"{variant_label(variant_name)} logical_form",
+            label=f"{variant_label(variant_name)} {metric_name}",
         )
 
         for position, score in zip(variant_positions, variant_scores, strict=True):
@@ -247,9 +283,9 @@ def save_logical_form_chart(
                 fontsize=10,
             )
 
-    axis.set_title(f"Logical Form Performance: {dataset_name} {split_name.capitalize()}")
+    axis.set_title(f"{metric_config['title']}: {dataset_name} {split_name.capitalize()}")
     axis.set_xlabel("Model")
-    axis.set_ylabel("Logical form accuracy")
+    axis.set_ylabel(metric_config["y_label"])
     axis.set_xticks(positions)
     axis.set_xticklabels(chart_models, rotation=20, ha="right")
     axis.set_ylim(0, 1.02)
@@ -258,11 +294,29 @@ def save_logical_form_chart(
     figure.tight_layout()
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    chart_path = output_dir / f"logical_form_{dataset_name.lower()}_{split_name}.png"
+    chart_path = (
+        output_dir / f"{metric_config['filename_prefix']}_{dataset_name.lower()}_{split_name}.png"
+    )
     figure.savefig(chart_path, dpi=200, bbox_inches="tight")
     pyplot.close(figure)
     print(f"Saved {dataset_name} {split_name} chart to {chart_path}")
     return True
+
+
+def save_logical_form_chart(
+    dataset_name: str,
+    split_name: str,
+    split_scores: dict[str, dict[str, float]],
+    output_dir: Path,
+) -> bool:
+    """Render one grouped bar chart comparing all logical-form variants."""
+    return save_metric_chart(
+        dataset_name,
+        split_name,
+        split_scores,
+        output_dir,
+        metric_name="logical_form",
+    )
 
 
 def main() -> None:
@@ -297,8 +351,8 @@ def main() -> None:
     if not jsonl_paths:
         raise SystemExit(f"No JSONL files found in {data_dir}")
 
-    logical_form_scores: dict[str, dict[str, dict[str, dict[str, float]]]] = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(dict))
+    chart_metric_scores: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     )
     csv_rows: list[dict[str, str | float]] = []
 
@@ -316,9 +370,10 @@ def main() -> None:
             continue
 
         model_name, dataset_name, split_name, variant_name = parsed_name
-        logical_form_scores[dataset_name][split_name][model_name][variant_name] = scores[
-            "logical_form"
-        ]
+        for metric_name in CHART_METRICS:
+            chart_metric_scores[metric_name][dataset_name][split_name][model_name][variant_name] = (
+                scores[metric_name]
+            )
         csv_rows.append(
             {
                 "filename": path.name,
@@ -330,14 +385,16 @@ def main() -> None:
             }
         )
 
-    for dataset_name, dataset_scores in sorted(logical_form_scores.items()):
-        for split_name in RUN_SPLITS:
-            save_logical_form_chart(
-                dataset_name,
-                split_name,
-                dataset_scores.get(split_name, {}),
-                output_dir,
-            )
+    for metric_name, metric_dataset_scores in sorted(chart_metric_scores.items()):
+        for dataset_name, dataset_scores in sorted(metric_dataset_scores.items()):
+            for split_name in RUN_SPLITS:
+                save_metric_chart(
+                    dataset_name,
+                    split_name,
+                    dataset_scores.get(split_name, {}),
+                    output_dir,
+                    metric_name=metric_name,
+                )
 
     save_stats_csv(csv_rows, csv_path)
 
