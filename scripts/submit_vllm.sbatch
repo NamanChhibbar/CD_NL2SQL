@@ -20,7 +20,7 @@
 #SBATCH --error=slurm/vllm_%j.err
 
 VLLM_IMAGE="vllm.sif"
-VLLM_PORT=8800
+# VLLM_PORT=8800
 
 # VLLM specific arguments
 # Replace with your desired model and other configurations.
