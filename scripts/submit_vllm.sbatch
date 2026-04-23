@@ -23,8 +23,13 @@ VLLM_IMAGE="vllm.sif"
 VLLM_PORT=8800
 
 # VLLM specific arguments
-# Replace with your desired model and other configurations
+# Replace with your desired model and other configurations.
+# Set VLLM_MODEL to the base model name or a local merged checkpoint path.
+# For LoRA adapters, also set VLLM_LORA_PATH and optionally VLLM_LORA_NAME.
 # VLLM_MODEL="google/gemma-3-12b-it"
+# VLLM_LORA_PATH="/abs/path/to/adapter"
+# VLLM_LORA_NAME="gemma3-ft"
+# VLLM_MAX_LORA_RANK=16
 VLLM_TENSOR_PARALLEL_SIZE=1 # Adjust based on your model and GPU count
 
 echo "Starting vLLM service..."
@@ -33,15 +38,39 @@ echo "Model: ${VLLM_MODEL}"
 echo "Tensor Parallel Size: ${VLLM_TENSOR_PARALLEL_SIZE}"
 echo "Listening on port: ${VLLM_PORT}"
 
-# Run the vLLM service using Apptainer
-# The --nv option enables NVIDIA GPU support within the container.
-# The -p argument maps the container port to the host port.
-# The --bind option can be used to mount host directories into the container
+APPTAINER_BIND_ARGS=(--bind "${HF_HOME}:${HF_HOME}")
+VLLM_ARGS=(
+  --host "$(hostname -f)"
+  --port "${VLLM_PORT}"
+  --model "${VLLM_MODEL}"
+  --tensor-parallel-size "${VLLM_TENSOR_PARALLEL_SIZE}"
+)
+
+if [[ -n "${VLLM_LORA_PATH:-}" ]]; then
+  if [[ -z "${VLLM_MODEL:-}" ]]; then
+    echo "VLLM_MODEL must be set to the base model when using VLLM_LORA_PATH." >&2
+    exit 1
+  fi
+
+  VLLM_LORA_NAME="${VLLM_LORA_NAME:-$(basename "${VLLM_LORA_PATH}")}"
+  VLLM_MAX_LORA_RANK="${VLLM_MAX_LORA_RANK:-16}"
+  VLLM_LORA_PARENT="$(dirname "${VLLM_LORA_PATH}")"
+
+  echo "LoRA Adapter: ${VLLM_LORA_NAME}"
+  echo "LoRA Path: ${VLLM_LORA_PATH}"
+  echo "Max LoRA Rank: ${VLLM_MAX_LORA_RANK}"
+
+  APPTAINER_BIND_ARGS+=(--bind "${VLLM_LORA_PARENT}:${VLLM_LORA_PARENT}")
+  VLLM_ARGS+=(
+    --enable-lora
+    --max-lora-rank "${VLLM_MAX_LORA_RANK}"
+    --lora-modules "${VLLM_LORA_NAME}=${VLLM_LORA_PATH}"
+  )
+fi
+
+# Run the vLLM service using Apptainer.
 apptainer exec --nv \
-  --bind "${HF_HOME}:${HF_HOME}" \
-  ${VLLM_IMAGE} \
+  "${APPTAINER_BIND_ARGS[@]}" \
+  "${VLLM_IMAGE}" \
   python3 -m vllm.entrypoints.openai.api_server \
-  --host $(hostname -f) \
-  --port ${VLLM_PORT} \
-  --model ${VLLM_MODEL} \
-  --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+  "${VLLM_ARGS[@]}"

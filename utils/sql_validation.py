@@ -1,7 +1,5 @@
 """Shared SQL syntax validation helpers backed by sqlglot."""
 
-from __future__ import annotations
-
 import re
 
 from sqlglot import Dialect, exp, parse_one
@@ -48,7 +46,11 @@ def validate_sql_with_sqlglot(sql_text: str) -> tuple[bool, str | None]:
     if isinstance(parsed, exp.Select) and not parsed.expressions:
         return False, "SELECT statements must include at least one projection."
 
-    regenerated_sql = parsed.sql(dialect=SQL_VALIDATION_DIALECT)
+    try:
+        regenerated_sql = parsed.sql(dialect=SQL_VALIDATION_DIALECT)
+    except (KeyError, ParseError, TokenError) as exc:
+        return False, f"The SQL could not be parsed cleanly by sqlglot: {exc}"
+
     if normalized_sql_token_types(sql) != normalized_sql_token_types(regenerated_sql):
         return False, "The SQL could not be parsed cleanly by sqlglot."
 

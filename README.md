@@ -119,6 +119,21 @@ docker run --runtime nvidia --gpus all \
 - `-v ~/.cache/huggingface:/root/.cache/huggingface`: Mounts your local Hugging Face cache to avoid re-downloading models.
 - `--tensor-parallel-size`: If you have multiple GPUs, you can specify the number of GPUs to use (e.g., `--tensor-parallel-size 2`).
 
+### Serving Fine-Tuned LoRA Adapters
+
+The training script saves PEFT LoRA adapters, not merged standalone checkpoints. To serve a fine-tuned model with vLLM, launch the base model and register the adapter with a LoRA alias:
+
+```bash
+sbatch --export=ALL,\
+VLLM_MODEL=unsloth/gemma-3-270m-it-unsloth-bnb-4bit,\
+VLLM_LORA_PATH=/abs/path/to/outputs/google-gemma-3-270m-it/google-gemma-3-270m-it_ft,\
+VLLM_LORA_NAME=gemma3-270m-ft,\
+VLLM_MAX_LORA_RANK=16 \
+scripts/submit_vllm.sbatch
+```
+
+Requests should then use `model="gemma3-270m-ft"`. If you serve a merged checkpoint instead, set `VLLM_MODEL` to that checkpoint path and omit the LoRA variables.
+
 ## Running the Analysis Script
 
 The SQL analysis scripts live under `scoring_system/`. The entry point is `scoring_system/main.py`, which evaluates every `*.jsonl` file under `scoring_system/data/`.
