@@ -134,6 +134,20 @@ scripts/submit_vllm.sbatch
 
 Requests should then use `model="gemma3-270m-ft"`. If you serve a merged checkpoint instead, set `VLLM_MODEL` to that checkpoint path and omit the LoRA variables.
 
+If startup fails with CUDA OOM during `capture_model` or CUDA graph warmup, retry with a smaller served context length and eager mode:
+
+```bash
+sbatch --export=ALL,\
+VLLM_MODEL=unsloth/gemma-3-270m-it-unsloth-bnb-4bit,\
+VLLM_LORA_PATH=/abs/path/to/outputs/google-gemma-3-270m-it/google-gemma-3-270m-it_ft,\
+VLLM_LORA_NAME=gemma3-270m-ft,\
+VLLM_MAX_LORA_RANK=16,\
+VLLM_MAX_MODEL_LEN=2048,\
+VLLM_GPU_MEMORY_UTILIZATION=0.8,\
+VLLM_ENFORCE_EAGER=1 \
+scripts/submit_vllm.sbatch
+```
+
 ## Running the Analysis Script
 
 The SQL analysis scripts live under `scoring_system/`. The entry point is `scoring_system/main.py`, which evaluates every `*.jsonl` file under `scoring_system/data/`.

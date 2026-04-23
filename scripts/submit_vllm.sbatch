@@ -30,6 +30,9 @@ VLLM_PORT=8800
 # VLLM_LORA_PATH="/abs/path/to/adapter"
 # VLLM_LORA_NAME="gemma3-ft"
 # VLLM_MAX_LORA_RANK=16
+# VLLM_MAX_MODEL_LEN=2048
+# VLLM_GPU_MEMORY_UTILIZATION=0.8
+# VLLM_ENFORCE_EAGER=1
 VLLM_TENSOR_PARALLEL_SIZE=1 # Adjust based on your model and GPU count
 
 echo "Starting vLLM service..."
@@ -37,6 +40,15 @@ echo "Using Apptainer image: ${VLLM_IMAGE}"
 echo "Model: ${VLLM_MODEL}"
 echo "Tensor Parallel Size: ${VLLM_TENSOR_PARALLEL_SIZE}"
 echo "Listening on port: ${VLLM_PORT}"
+if [[ -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
+  echo "Max Model Length: ${VLLM_MAX_MODEL_LEN}"
+fi
+if [[ -n "${VLLM_GPU_MEMORY_UTILIZATION:-}" ]]; then
+  echo "GPU Memory Utilization: ${VLLM_GPU_MEMORY_UTILIZATION}"
+fi
+if [[ "${VLLM_ENFORCE_EAGER:-0}" == "1" || "${VLLM_ENFORCE_EAGER:-}" == "true" ]]; then
+  echo "CUDA Graphs: disabled via --enforce-eager"
+fi
 
 APPTAINER_BIND_ARGS=(--bind "${HF_HOME}:${HF_HOME}")
 VLLM_ARGS=(
@@ -45,6 +57,18 @@ VLLM_ARGS=(
   --model "${VLLM_MODEL}"
   --tensor-parallel-size "${VLLM_TENSOR_PARALLEL_SIZE}"
 )
+
+if [[ -n "${VLLM_MAX_MODEL_LEN:-}" ]]; then
+  VLLM_ARGS+=(--max-model-len "${VLLM_MAX_MODEL_LEN}")
+fi
+
+if [[ -n "${VLLM_GPU_MEMORY_UTILIZATION:-}" ]]; then
+  VLLM_ARGS+=(--gpu-memory-utilization "${VLLM_GPU_MEMORY_UTILIZATION}")
+fi
+
+if [[ "${VLLM_ENFORCE_EAGER:-0}" == "1" || "${VLLM_ENFORCE_EAGER:-}" == "true" ]]; then
+  VLLM_ARGS+=(--enforce-eager)
+fi
 
 if [[ -n "${VLLM_LORA_PATH:-}" ]]; then
   if [[ -z "${VLLM_MODEL:-}" ]]; then
