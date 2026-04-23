@@ -8,8 +8,6 @@ import re
 from schema import Condition, ParsedSQL
 from sql_parser import parse_sql
 
-from utils.sql_validation import validate_sql_with_sqlglot
-
 
 def multiset_match_under_value_equality(
     predicted_values: list[str], gold_values: list[str]
@@ -224,7 +222,6 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
     group_by_matches = 0
     order_by_matches = 0
     limit_matches = 0
-    sql_syntax_valid_matches = 0
 
     logical_form_matches = 0
 
@@ -256,10 +253,6 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
                 record["response"]
             )  # extracting the predicted sql from the response
             gold_sql = record["human_sql"]  # extracting the gold sql from the record
-
-            predicted_is_valid_sql, _validation_error = validate_sql_with_sqlglot(predicted_sql)
-            if predicted_is_valid_sql:
-                sql_syntax_valid_matches += 1
 
             parsed_predicted = parse_sql(predicted_sql)  # parsing the predicted sql
             parsed_gold = parse_sql(gold_sql)  # parsing the gold sql
@@ -413,6 +406,5 @@ def evaluate(jsonl_path: Path) -> dict[str, float]:
         "group_by": group_by_matches / denominator,
         "order_by": order_by_matches / denominator,
         "limit": limit_matches / denominator,
-        "sql_syntax_valid": sql_syntax_valid_matches / denominator,
         "logical_form": logical_form_matches / denominator,
     }  # returning the scores
