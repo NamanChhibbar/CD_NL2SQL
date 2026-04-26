@@ -42,6 +42,8 @@ def validate_sql_with_sqlglot(sql_text: str) -> tuple[bool, str | None]:
         parsed = parse_one(sql, dialect=SQL_VALIDATION_DIALECT)
     except (ParseError, TokenError) as exc:
         return False, str(exc)
+    except RecursionError:
+        return False, "The SQL could not be parsed cleanly by sqlglot."
 
     if isinstance(parsed, exp.Select) and not parsed.expressions:
         return False, "SELECT statements must include at least one projection."
