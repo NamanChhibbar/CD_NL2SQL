@@ -283,7 +283,7 @@ def save_metric_chart(
         print(f"Could not import {error.name}; skipping chart generation.")
         return False
 
-    figure_width = max(8, len(chart_models) * 1.6)
+    figure_width = max(10, len(chart_models) * 1.7 + 2.5)
     figure, axis = pyplot.subplots(figsize=(figure_width, 6))
     positions = list(range(len(chart_models)))
     bar_width = 0.8 / len(observed_variants)
@@ -300,7 +300,7 @@ def save_metric_chart(
             variant_scores,
             width=bar_width,
             color=variant_color(variant_name, variant_index),
-            label=f"{variant_label(variant_name)} {metric_name}",
+            label=variant_label(variant_name),
         )
 
         for position, score in zip(variant_positions, variant_scores, strict=True):
@@ -322,7 +322,7 @@ def save_metric_chart(
     axis.set_xticklabels(chart_models, rotation=20, ha="right")
     axis.set_ylim(0, 1.02)
     axis.grid(axis="y", linestyle="--", alpha=0.35)
-    axis.legend()
+    axis.legend(loc="upper left")
     figure.tight_layout()
 
     output_dir.mkdir(parents=True, exist_ok=True)
