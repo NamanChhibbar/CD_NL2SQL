@@ -40,7 +40,7 @@ def get_data(dataset_name: DatasetNames, split: Literal["train", "validation", "
             train, val, test = split_data(
                 load_dataset("trl-lab/SQaLe-text-to-SQL-dataset")["train"],
                 0.8,
-                0.1,
+                0.175,
                 random_seed=42,
             )
             match split:

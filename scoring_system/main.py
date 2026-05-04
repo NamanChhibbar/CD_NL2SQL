@@ -6,11 +6,8 @@ import csv
 import math
 from pathlib import Path
 import re
-import sys
 
-SCORING_SYSTEM_DIR = Path(__file__).resolve().parent
-if str(SCORING_SYSTEM_DIR) not in sys.path:
-    sys.path.insert(0, str(SCORING_SYSTEM_DIR))
+from utils.enums import GemmaModels
 
 RUN_SPLITS = ("validation", "test")
 VARIANT_BASE = "base"
@@ -43,12 +40,37 @@ CHART_METRICS = {
         "y_label": "Logical form accuracy",
         "filename_prefix": "logical_form",
     },
-    "sql_syntax_valid": {
-        "title": "SQL Syntax Validity",
-        "y_label": "Syntax-valid SQL rate",
-        "filename_prefix": "sql_syntax_valid",
-    },
 }
+
+
+def filename_safe_model_name(model_name: str) -> str:
+    """Match the filename format used when generation outputs are written."""
+    return model_name.replace("/", "-")
+
+
+def build_model_aliases() -> dict[str, str]:
+    """Map fine-tuned model aliases back to their base model names."""
+    model_values = {member.name: str(member) for member in GemmaModels}
+    aliases: dict[str, str] = {}
+
+    for enum_name, ft_model_name in model_values.items():
+        if not enum_name.endswith("_FT"):
+            continue
+
+        base_enum_name = enum_name.removesuffix("_FT")
+        base_model_name = model_values.get(base_enum_name)
+        if base_model_name is None:
+            continue
+
+        ft_filename = filename_safe_model_name(ft_model_name)
+        base_filename = filename_safe_model_name(base_model_name)
+        aliases[ft_filename] = base_filename
+        aliases[ft_filename.removesuffix("-ft")] = base_filename
+
+    return aliases
+
+
+MODEL_ALIASES = build_model_aliases()
 
 
 def extract_model_name_and_variants(model_parts: list[str]) -> tuple[str, list[str]]:
@@ -85,6 +107,11 @@ def combine_variants(variant_markers: list[str]) -> str:
     ordered_markers = [variant for variant in VARIANT_ORDER if variant in unique_markers]
     extra_markers = sorted(unique_markers.difference(VARIANT_ORDER))
     return "+".join([*ordered_markers, *extra_markers])
+
+
+def canonicalize_model_name(model_name: str) -> str:
+    """Collapse fine-tuned aliases onto the corresponding base model name."""
+    return MODEL_ALIASES.get(model_name, model_name)
 
 
 def extract_explicit_variant_suffixes(parts: list[str]) -> tuple[list[str], list[str]]:
@@ -134,7 +161,7 @@ def parse_result_filename(jsonl_path: Path) -> tuple[str, str, str, str] | None:
         return None
 
     variant_name = combine_variants([*variant_markers, *embedded_variants])
-    return model_name, dataset_name, split_name, variant_name
+    return canonicalize_model_name(model_name), dataset_name, split_name, variant_name
 
 
 def load_evaluator():
@@ -256,7 +283,7 @@ def save_metric_chart(
         print(f"Could not import {error.name}; skipping chart generation.")
         return False
 
-    figure_width = max(8, len(chart_models) * 1.6)
+    figure_width = max(10, len(chart_models) * 1.7 + 2.5)
     figure, axis = pyplot.subplots(figsize=(figure_width, 6))
     positions = list(range(len(chart_models)))
     bar_width = 0.8 / len(observed_variants)
@@ -273,7 +300,7 @@ def save_metric_chart(
             variant_scores,
             width=bar_width,
             color=variant_color(variant_name, variant_index),
-            label=f"{variant_label(variant_name)} {metric_name}",
+            label=variant_label(variant_name),
         )
 
         for position, score in zip(variant_positions, variant_scores, strict=True):
@@ -295,7 +322,7 @@ def save_metric_chart(
     axis.set_xticklabels(chart_models, rotation=20, ha="right")
     axis.set_ylim(0, 1.02)
     axis.grid(axis="y", linestyle="--", alpha=0.35)
-    axis.legend()
+    axis.legend(loc="upper left")
     figure.tight_layout()
 
     output_dir.mkdir(parents=True, exist_ok=True)

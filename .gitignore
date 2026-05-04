@@ -1,6 +1,8 @@
 ### Template for projects involving Python and LaTeX ###
 ## Project files
 data/
+outputs/
+/.uv-cache/
 
 # Custom ignores
 temp*

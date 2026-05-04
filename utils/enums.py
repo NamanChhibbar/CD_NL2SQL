@@ -11,6 +11,14 @@ class GemmaModels(StrEnum):
     GEMMA3_4B = "google/gemma-3-4b-it"
     GEMMA3_12B = "google/gemma-3-12b-it"
     GEMMA3_27B = "google/gemma-3-27b-it"
+    GEMMA3_270M_FT = "gemma3-270m-ft"
+    GEMMA3_1B_FT = "gemma3-1b-ft"
+    GEMMA3_4B_FT = "gemma3-4b-ft"
+    GEMMA3_12B_FT = "gemma3-12b-ft"
+    GEMMA4_E2B = "google/gemma-4-E2B-it"
+    GEMMA4_E4B = "google/gemma-4-E4B-it"
+    GEMMA4_26B = "google/gemma-4-26B-A4B-it"
+    GEMMA4_31B = "google/gemma-4-31B-it"
 
 
 class DatasetNames(StrEnum):

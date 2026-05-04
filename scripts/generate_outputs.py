@@ -276,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         choices=[str(v) for v in GemmaModels],
         default=str(GemmaModels.GEMMA3_270M),
-        help="Model name to use",
+        help="Model name to use. Must match the model ID exposed by the vLLM server.",
     )
     parser.add_argument(
         "--endpoint",
